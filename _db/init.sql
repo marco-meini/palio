@@ -1,0 +1,18 @@
+insert into contrade (contrada_id,contrada_nome)
+values (1,'Aquila'),
+(2,'Bruco'),
+(3,'Chiocciola'),
+(4,'Civetta'),
+(5,'Drago'),
+(6,'Giraffa'),
+(7,'Istrice'),
+(8,'Leocorno'),
+(9,'Lupa'),
+(10,'Nicchio'),
+(11,'Oca'),
+(12,'Onda'),
+(13,'Pantera'),
+(14,'Selva'),
+(15,'Tartuca'),
+(16,'Torre'),
+(17,'Valdimontone');
