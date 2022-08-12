@@ -21,3 +21,18 @@ group by pc_fantino_id
 , b.contrada_nome
 having count(*)>=6
 order by 4 desc
+
+
+-- Palio
+select b.contrada_nome
+, c.fantino_soprannome || ' (' || coalesce(c.fantino_nome,'') || ')' as fantino
+, d.cavallo_nome
+, a.pc_vincente
+, a.pc_estratta
+, a.pc_canape
+from palii_contrade a
+inner join contrade b on a.pc_contrada_id=b.contrada_id
+inner join fantini c on a.pc_fantino_id=c.fantino_id
+inner join cavalli d on a.pc_cavallo_id=d.cavallo_id
+where pc_palio_id=19880702
+order by pc_canape

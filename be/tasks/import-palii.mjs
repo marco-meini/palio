@@ -36,7 +36,7 @@ const CONTRADE = {
 //   istrice: 7
 // };
 
-class Import {
+class ImportPalii {
   constructor() {
     this.__model = new Model(config.db);
   }
@@ -158,7 +158,7 @@ class Import {
 }
 
 (async () => {
-  let _import = new Import();
+  let _import = new ImportPalii();
   try {
     await _import.truncate();
     await _import.exec();
