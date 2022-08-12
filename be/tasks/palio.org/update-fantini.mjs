@@ -1,9 +1,9 @@
 "use strict";
 
 import * as cheerio from "cheerio";
-import { HttpsRequests } from "../lib/https-requests.mjs";
-import { Model } from "../model/model.mjs";
-import config from "../config/config.mjs";
+import { HttpsRequests } from "../../lib/https-requests.mjs";
+import { Model } from "../../model/model.mjs";
+import config from "../../config/config.mjs";
 
 const PAGES = ["https://www.ilpalio.org/dizionarioaf.htm", "https://www.ilpalio.org/dizionariogo.htm", "https://www.ilpalio.org/dizionariopz.htm"];
 

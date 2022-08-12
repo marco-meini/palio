@@ -4,11 +4,11 @@
 
 "use strict";
 
-import { HttpsRequests } from "../lib/https-requests.mjs";
+import { HttpsRequests } from "../../lib/https-requests.mjs";
 import * as cheerio from "cheerio";
 import moment from "moment";
-import config from "../config/config.mjs";
-import { Model } from "../model/model.mjs";
+import config from "../../config/config.mjs";
+import { Model } from "../../model/model.mjs";
 
 moment.locale("it-IT");
 
