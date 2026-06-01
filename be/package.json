@@ -1,17 +1,13 @@
 {
   "name": "palio-be",
-  "version": "1.0.0",
-  "description": "Backend for PalioDB",
-  "main": "main.js",
+  "private": true,
   "type": "module",
   "scripts": {
-    "import": "node tasks/import.mjs"
+    "test": "node --test test/*.test.js"
   },
-  "author": "Marco Meini",
-  "license": "ISC",
   "dependencies": {
-    "cheerio": "^1.0.0-rc.12",
+    "cheerio": "^1.0.0",
     "moment": "^2.29.4",
-    "pg": "^8.7.3"
+    "pg": "^8.13.1"
   }
 }

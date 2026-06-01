@@ -1,38 +1,41 @@
-"use strict";
+const DEFAULT_USER_AGENT =
+  'palio-importer/1.0 (https://github.com/palio; contact: local dev)';
 
-import https from "https";
-
-class HttpsRequests {
-  static async call(url, options = {}) {
-    return new Promise((resolve, reject) => {
-      let response = {
-        body: "",
-        headers: {},
-        statusCode: 200,
-        statusMessage: null
-      };
-
-      const req = https.request(url, options, (res) => {
-        response.statusCode = res.statusCode;
-        response.headers = res.headers;
-        response.statusMessage = res.statusMessage;
-
-        res.on("data", (d) => {
-          response.body += d;
-        });
-
-        res.on("end", () => {
-          resolve(response);
-        });
-      });
-
-      req.on("error", (e) => {
-        reject(e);
-      });
-
-      req.end();
-    });
+export async function fetchHtml(url, { delayMs = 0 } = {}) {
+  if (delayMs > 0) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
+
+  const res = await fetch(url, {
+    headers: {
+      'User-Agent': DEFAULT_USER_AGENT,
+      Accept: 'text/html,application/xhtml+xml',
+    },
+    redirect: 'follow',
+  });
+
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} fetching ${url}`);
+  }
+
+  return res.text();
 }
 
-export { HttpsRequests };
+export function resolvePalioUrl(href, baseUrl = 'https://www.ilpalio.siena.it') {
+  if (!href) return null;
+  if (href.startsWith('http://') || href.startsWith('https://')) {
+    return href;
+  }
+  const base = baseUrl.replace(/\/$/, '');
+  const path = href.startsWith('/') ? href : `/${href}`;
+  return `${base}${path}`;
+}
+
+export function sourceCodeFromUrl(url) {
+  const match = String(url).match(/\/Palio\/(\d{9})(?:\/|$)/i);
+  return match ? match[1] : null;
+}
+
+export function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
