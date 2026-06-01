@@ -1,6 +1,72 @@
 # palio
 
-Database e import dati dal [Palio di Siena](https://www.ilpalio.siena.it/).
+Database e import dati dal [Palio di Siena](https://www.ilpalio.siena.it/), più **Palio Chat**: interfaccia Angular che interroga il database in sola lettura tramite un assistente Claude.
+
+## Palio Chat (Angular + API)
+
+Chat locale per domande su edizioni, contrade, cavalli e risultati. Il backend usa la skill Postgres (`scripts/postgres`) in **sola lettura** — nessun INSERT/UPDATE/DELETE esposto all'assistente.
+
+### Prerequisiti
+
+- Node.js 20+
+- Postgres locale configurato in `.skills/postgres/config.toml` (non versionato)
+- Config backend: `be/config/config.mjs` (non versionato; vedi sotto)
+
+### Setup
+
+```bash
+# Backend
+cd be && npm install
+cp config/config.example.mjs config/config.mjs
+# Modifica config.mjs: anthropic.apiKey, db.* se serve
+
+# Frontend
+cd fe && npm install
+```
+
+Opzioni in [`be/config/config.example.mjs`](be/config/config.example.mjs) (copia in `config.mjs`):
+
+| Chiave | Default | Descrizione |
+|--------|---------|-------------|
+| `anthropic.apiKey` | — | Obbligatoria per la chat |
+| `anthropic.model` | `claude-sonnet-4-20250514` | Modello Claude |
+| `postgres.cli` | `~/.agents/skills/postgres/scripts/postgres` | Launcher skill Postgres |
+| `postgres.projectRoot` | root repo | Directory con `.skills/postgres/config.toml` |
+| `postgres.profile` | `local` | Profilo connessione |
+| `server.port` | `3001` | Porta API |
+| `server.corsOrigin` | `http://localhost:4200` | Origine Angular dev |
+| `db.*` | localhost | Pool pg diretto (task `palio.org`) |
+
+### Avvio in sviluppo
+
+```bash
+# Dalla root — API + frontend insieme
+npm install
+npm run dev
+
+# Oppure separatamente:
+npm run dev:api   # http://localhost:3001
+npm run dev:fe    # http://localhost:4200 (proxy /api → 3001)
+```
+
+Verifica API:
+
+```bash
+curl http://localhost:3001/api/health
+# {"ok":true,"db":"Connection OK (profile: local)"}
+```
+
+Apri [http://localhost:4200](http://localhost:4200) e prova domande come:
+
+- *Quali cavalli hanno corso in due palii consecutivi in anni diversi?*
+- *Quante vittorie ha l'Aquila negli anni '90?*
+
+### Test
+
+```bash
+cd be && npm test          # parser + guardrail SQL read-only
+cd fe && npm run build     # build Angular
+```
 
 ## Database
 
@@ -178,3 +244,47 @@ ORDER BY pp.ordine_arrivo NULLS LAST, pp.canape;
 ```
 
 Esempio: Oca `ordine_arrivo=1`, Bruco `2`, Selva `3`, Valdimontone `4`; le altre contrade al canape con `ordine_arrivo` NULL.
+
+## Palio Chat (AI + database)
+
+Web app in [`fe/`](fe/) per interrogare il database in linguaggio naturale. Il backend ([`be/server/`](be/server/)) usa **Claude** (Anthropic) con tool che invocano la skill Postgres (`scripts/postgres`) in **sola lettura**.
+
+### Prerequisiti
+
+- Database Palio popolato e profilo in `.skills/postgres/config.toml`
+- Skill Postgres installata: `~/.agents/skills/postgres/scripts/postgres`
+- `be/config/config.mjs` con `anthropic.apiKey` (copia da [`be/config/config.example.mjs`](be/config/config.example.mjs))
+
+### Avvio in sviluppo
+
+```bash
+# dalla root del repo
+cp be/config/config.example.mjs be/config/config.mjs
+# imposta anthropic.apiKey in be/config/config.mjs
+
+npm install              # concurrently (root)
+cd be && npm install
+cd ../fe && npm install
+
+# terminale unico (API :3001 + Angular :4200)
+npm run dev
+```
+
+Oppure due terminali: `npm run dev:api` e `npm run dev:fe`.
+
+- UI: http://localhost:4200  
+- Health: http://localhost:3001/api/health  
+
+### Stack
+
+| Parte | Tecnologie |
+|-------|------------|
+| Frontend | Angular 21, Tailwind CSS 4, UI stile Spartan/shadcn (Tailwind) |
+| Backend | Fastify, Vercel AI SDK, `@ai-sdk/anthropic` |
+| DB | Postgres skill CLI (`query run`, `schema inspect`, `query find`) |
+
+Per aggiungere componenti [Spartan-ng](https://www.spartan.ng) in seguito: `cd fe && npx @spartan-ng/cli init` (richiede rete/registry).
+
+### Sicurezza
+
+La chat non può eseguire `INSERT`, `UPDATE`, `DELETE`, DDL o migration: solo `SELECT` / `WITH` / `EXPLAIN`.
