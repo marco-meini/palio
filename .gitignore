@@ -8,4 +8,5 @@ be/package-lock.json
 
 be/config/config.mjs
 be/config/google-oauth.json
+.env.production
 .skills/postgres/config.toml

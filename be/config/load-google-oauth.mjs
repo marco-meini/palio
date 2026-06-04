@@ -52,7 +52,15 @@ export function loadGoogleOAuthFromFile(filePath = DEFAULT_GOOGLE_OAUTH_PATH) {
  */
 export function mergeGoogleOAuthCredentials(google, filePath = DEFAULT_GOOGLE_OAUTH_PATH) {
   const fromFile = loadGoogleOAuthFromFile(filePath);
-  const clientId = String(google?.clientId ?? '').trim() || fromFile?.clientId || '';
-  const clientSecret = String(google?.clientSecret ?? '').trim() || fromFile?.clientSecret || '';
+  const clientId =
+    String(process.env.GOOGLE_CLIENT_ID ?? '').trim() ||
+    String(google?.clientId ?? '').trim() ||
+    fromFile?.clientId ||
+    '';
+  const clientSecret =
+    String(process.env.GOOGLE_CLIENT_SECRET ?? '').trim() ||
+    String(google?.clientSecret ?? '').trim() ||
+    fromFile?.clientSecret ||
+    '';
   return { clientId, clientSecret };
 }

@@ -1,10 +1,9 @@
 import cors from '@fastify/cors';
 import Fastify from 'fastify';
-import config from '../config/config.mjs';
-import { mergeGoogleOAuthCredentials } from '../config/load-google-oauth.mjs';
+import config from '../config/load-config.mjs';
 import { loadPgConfig } from '../lib/db-config.js';
 import { PgClientManager } from '../lib/pg-client-manager.mjs';
-import { profileTest } from '../lib/postgres-cli.mjs';
+import { initPostgresCliPool, profileTest } from '../lib/postgres-cli.mjs';
 import { createRequireAuth, registerAuth } from './auth.mjs';
 import { runChatAgent } from './chat-agent.mjs';
 
@@ -44,12 +43,12 @@ await app.register(cors, {
   credentials: true,
 });
 
-const auth = {
-  ...config.auth,
-  google: mergeGoogleOAuthCredentials(config.auth?.google),
-};
+const auth = config.auth;
 
-const pg = new PgClientManager(loadPgConfig(config.postgres?.profile ?? 'local'));
+const pg = new PgClientManager(
+  loadPgConfig(process.env.DB_PROFILE || config.postgres?.profile || 'local'),
+);
+initPostgresCliPool(pg);
 
 await registerAuth(app, auth, pg);
 
@@ -118,7 +117,7 @@ app.post('/api/chat', { preHandler: requireAuth }, async (request, reply) => {
 
 try {
   await app.listen({ port: PORT, host: '0.0.0.0' });
-  console.info(`Palio chat API listening on http://localhost:${PORT}`);
+  console.info(`Dimmelo API listening on http://localhost:${PORT}`);
 } catch (err) {
   app.log.error(err);
   process.exit(1);

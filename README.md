@@ -112,11 +112,36 @@ ON CONFLICT (email) DO UPDATE SET display_name = EXCLUDED.display_name;
 
 L’email va in **minuscolo** (vincolo `CHECK`). Il `display_name` compare nell’header chat (`GET /api/auth/me` → `name`).
 
-#### Deploy pubblico (HTTPS)
+#### Deploy produzione (Docker + Caddy)
 
-- Imposta `auth.enabled: true`, `publicApiUrl` e `publicAppUrl` con l’URL HTTPS reale.
-- Preferisci **un solo dominio**: reverse proxy che serve Angular su `/` e inoltra `/api/*` al backend Node. Cookie `SameSite=Lax` + `Secure` funzionano senza CORS cross-site.
-- Se UI e API restano su host diversi, configura `server.corsOrigin` con l’origine del frontend e verifica che CORS usi `credentials: true` (già impostato in `be/server/index.mjs`).
+Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, container FE/BE, Postgres in container Docker sulla rete `postgres`).
+
+**Prerequisiti VPS:** Docker, rete `postgres` con container DB collegato, DB `palio` ripristinato ([`docker/restore-palio-local.sh`](docker/restore-palio-local.sh)), migration [`dimmelo_users.sql`](db/migrations/dimmelo_users.sql).
+
+1. Copia il progetto sul server (es. `~/palio`).
+2. Configura ambiente:
+   ```bash
+   cp .env.production.example .env.production
+   # DATABASE_URL=postgresql://postgres:PASSWORD@postgres:5432/palio
+   # AUTH_*, ANTHROPIC_API_KEY, GOOGLE_CLIENT_ID/SECRET (o volume google-oauth.json)
+   ```
+3. Avvia stack (FE su `127.0.0.1:8080`, BE solo rete interna):
+   ```bash
+   docker compose up -d --build
+   ```
+4. Caddy — aggiungi il blocco in [`docker/caddy-dimmelo.snippet`](docker/caddy-dimmelo.snippet) a `/etc/caddy/Caddyfile`, poi `sudo systemctl reload caddy`.
+5. Google OAuth redirect URI: `https://dimmelo.marcomeini.it/api/auth/google/callback`
+6. Verifica: `curl -s https://dimmelo.marcomeini.it/api/health`
+
+In Docker il backend usa **`DATABASE_URL`** e il driver `pg` (non la skill Postgres CLI). In dev locale resta `config.mjs` + skill CLI.
+
+**Portainer dietro Caddy:** se compare `Forbidden - origin invalid`, imposta `TRUSTED_ORIGINS=portainer.marcomeini.it` sul container Portainer e inoltra `Host` / `X-Forwarded-Proto` nel proxy Caddy.
+
+#### Deploy pubblico (HTTPS) — note
+
+- `AUTH_PUBLIC_APP_URL` e `AUTH_PUBLIC_API_URL` = `https://dimmelo.marcomeini.it` (stesso host; il FE nginx inoltra `/api` al BE).
+- `CORS_ORIGIN` = stesso URL.
+- Non esporre Postgres (`5432`) su Internet; solo rete Docker `postgres`.
 
 Route auth:
 

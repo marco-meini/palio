@@ -1,0 +1,9 @@
+# Aggiungi in /etc/caddy/Caddyfile sul VPS (oltre a portainer.marcomeini.it):
+
+dimmelo.marcomeini.it {
+    reverse_proxy 127.0.0.1:8080
+}
+
+# Poi: sudo systemctl reload caddy
+# DNS: record A dimmelo.marcomeini.it → IP del VPS
+# Google OAuth redirect: https://dimmelo.marcomeini.it/api/auth/google/callback

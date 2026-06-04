@@ -1,7 +1,7 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { streamText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
-import config from '../config/config.mjs';
+import config from '../config/load-config.mjs';
 import { compactToolResult } from '../lib/compact-tool-result.mjs';
 import {
   findObjects,

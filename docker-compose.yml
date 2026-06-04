@@ -1,0 +1,27 @@
+services:
+  be:
+    build:
+      context: ./be
+    env_file:
+      - .env.production
+    restart: unless-stopped
+    networks:
+      - postgres
+      - dimmelo
+
+  fe:
+    build:
+      context: ./fe
+    depends_on:
+      - be
+    ports:
+      - "127.0.0.1:8080:80"
+    restart: unless-stopped
+    networks:
+      - dimmelo
+
+networks:
+  postgres:
+    external: true
+  dimmelo:
+    driver: bridge

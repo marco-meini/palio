@@ -1,5 +1,12 @@
 import { spawn } from 'node:child_process';
-import config from '../config/config.mjs';
+import config from '../config/load-config.mjs';
+import {
+  pgFindObjects,
+  pgListTables,
+  pgProfileTest,
+  pgRunQuery,
+  pgSchemaInspect,
+} from './pg-readonly-driver.mjs';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_CHARS = 200_000;
 /** Limite per risultati tool passati al modello (chat) */
@@ -13,6 +20,21 @@ const ALLOWED_START = /^(SELECT|WITH|EXPLAIN)\b/i;
 
 /** @type {{ data: string | null; expiresAt: number }} */
 const schemaCache = { data: null, expiresAt: 0 };
+
+/** @type {import('./pg-client-manager.mjs').PgClientManager | null} */
+let sharedPg = null;
+
+/**
+ * Usa il driver `pg` (Docker / DATABASE_URL) invece della skill Postgres CLI.
+ * @param {import('./pg-client-manager.mjs').PgClientManager} pg
+ */
+export function initPostgresCliPool(pg) {
+  sharedPg = pg;
+}
+
+function usePgDriver() {
+  return sharedPg != null || Boolean(process.env.DATABASE_URL);
+}
 
 /**
  * @returns {string}
@@ -284,6 +306,9 @@ function runCli(args, options = {}) {
  * @returns {Promise<string>}
  */
 export async function profileTest() {
+  if (usePgDriver() && sharedPg) {
+    return pgProfileTest(sharedPg);
+  }
   const { stdout, stderr, exitCode } = await runCli(['profile', 'test']);
   const output = (stdout + stderr).trim();
   if (exitCode !== 0) {
@@ -297,6 +322,9 @@ export async function profileTest() {
  * @returns {Promise<string>}
  */
 export async function listTables() {
+  if (usePgDriver() && sharedPg) {
+    return truncateForModel(await pgListTables(sharedPg));
+  }
   const { stdout, stderr, exitCode } = await runCli(['schema', 'list', 'tables']);
   const output = truncateForModel((stdout + stderr).trim());
   if (exitCode !== 0) {
@@ -324,6 +352,13 @@ export async function schemaInspect(options = {}) {
     return schemaCache.data;
   }
 
+  if (usePgDriver() && sharedPg) {
+    const output = truncateForModel(await pgSchemaInspect(sharedPg), 4000);
+    schemaCache.data = output;
+    schemaCache.expiresAt = now + SCHEMA_CACHE_TTL_MS;
+    return output;
+  }
+
   const { stdout, stderr, exitCode } = await runCli(['schema', 'inspect']);
   const output = truncateForModel(truncateOutput((stdout + stderr).trim()), 4000);
   if (exitCode !== 0) {
@@ -341,6 +376,9 @@ export async function schemaInspect(options = {}) {
  * @returns {Promise<string>}
  */
 export async function findObjects(pattern, types) {
+  if (usePgDriver() && sharedPg) {
+    return truncateForModel(await pgFindObjects(sharedPg, pattern, types));
+  }
   const args = ['query', 'find', pattern];
   if (types) args.push('--types', types);
 
@@ -358,6 +396,11 @@ export async function findObjects(pattern, types) {
  */
 export async function runQuery(sql) {
   assertReadOnlySql(sql);
+
+  if (usePgDriver() && sharedPg) {
+    const raw = await pgRunQuery(sharedPg, sql);
+    return truncateForModel(raw);
+  }
 
   const { stdout, stderr, exitCode } = await runCli(['query', 'run'], { stdin: sql });
   const raw = truncateOutput((stdout + stderr).trim());

@@ -69,6 +69,7 @@ export default {
       clientSecret: '',
     },
     /** Utenti autorizzati: tabella Postgres `dimmelo_users` (vedi db/migrations/dimmelo_users.sql). */
+    /** Produzione: https://dimmelo.marcomeini.it (stesso valore per entrambi) */
     publicApiUrl: 'http://localhost:3001',
     publicAppUrl: 'http://localhost:4200',
   },
