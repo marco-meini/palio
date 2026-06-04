@@ -1,8 +1,8 @@
 # palio
 
-Database e import dati dal [Palio di Siena](https://www.ilpalio.siena.it/), più **Palio Chat**: interfaccia Angular che interroga il database in sola lettura tramite un assistente Claude.
+Database e import dati dal [Palio di Siena](https://www.ilpalio.siena.it/), più **Dimmelo**: interfaccia Angular che interroga il database in sola lettura tramite un assistente Claude.
 
-## Palio Chat (Angular + API)
+## Dimmelo (Angular + API)
 
 Chat locale per domande su edizioni, contrade, cavalli e risultati. Il backend usa la skill Postgres (`scripts/postgres`) in **sola lettura** — nessun INSERT/UPDATE/DELETE esposto all'assistente.
 
@@ -35,7 +35,11 @@ Opzioni in [`be/config/config.example.mjs`](be/config/config.example.mjs) (copia
 | `postgres.profile` | `local` | Profilo connessione |
 | `server.port` | `3001` | Porta API |
 | `server.corsOrigin` | `http://localhost:4200` | Origine Angular dev |
-| `db.*` | localhost | Pool pg diretto (task `palio.org`) |
+| `auth.enabled` | `false` | `true` in produzione; `false` in dev senza Google |
+| `auth.sessionSecret` | — | Segreto ≥32 char per JWT sessione (HS256) |
+| `db.*` | localhost | Pool Postgres (task palio.org, **allowlist utenti Dimmelo**) |
+| `auth.publicApiUrl` | `http://localhost:3001` | Base URL API (redirect OAuth callback) |
+| `auth.publicAppUrl` | `http://localhost:4200` | URL frontend dopo login |
 
 ### Avvio in sviluppo
 
@@ -64,9 +68,66 @@ Apri [http://localhost:4200](http://localhost:4200) e prova domande come:
 ### Test
 
 ```bash
-cd be && npm test          # parser + guardrail SQL read-only
+cd be && npm test          # parser + guardrail SQL read-only + auth
 cd fe && npm run build     # build Angular
 ```
+
+### Autenticazione Google (OAuth)
+
+Dimmelo può richiedere login Google prima di chiamare `POST /api/chat`. Il backend gestisce l’OAuth Authorization Code, emette un cookie di sessione **httpOnly** (JWT firmato con `jose`) e controlla che l’email sia presente in Postgres (`dimmelo_users`).
+
+In sviluppo locale, lascia `auth.enabled: false` in `be/config/config.mjs` per usare la chat senza configurare Google.
+
+#### Google Cloud Console
+
+1. Crea o seleziona un progetto → **APIs & Services** → **OAuth consent screen** (External; aggiungi test users se l’app è in testing).
+2. **Credentials** → **Create credentials** → **OAuth 2.0 Client ID** → tipo **Web application**.
+3. **Authorized redirect URIs**:
+   - Dev: `http://localhost:3001/api/auth/google/callback`
+   - Prod: `https://<tuo-dominio>/api/auth/google/callback` (stesso host del proxy API)
+4. Credenziali OAuth (scegli una opzione):
+   - **File (consigliato):** copia il JSON da Google in `be/config/google-oauth.json` (non versionato; vedi `be/config/google-oauth.example.json`). Lascia `auth.google.clientId` / `clientSecret` vuoti in `config.mjs`.
+   - **Inline:** imposta `auth.google.clientId` e `clientSecret` in `be/config/config.mjs` (ha priorità sui campi del file).
+5. Genera un segreto sessione: `openssl rand -base64 48` → `auth.sessionSecret`.
+6. Applica la migration utenti e aggiungi account autorizzati (vedi sotto **Utenti Dimmelo**).
+   - Deve essere l’**email principale del profilo Google** usato al login.
+   - Se vedi *«account Google non è autorizzato»* con `Account usato: nome@***`, verifica su [account.google.com](https://myaccount.google.com) l’email e inseriscila in `dimmelo_users`.
+
+#### Utenti Dimmelo (`dimmelo_users`)
+
+Migration: [`db/migrations/dimmelo_users.sql`](db/migrations/dimmelo_users.sql) (include seed per `marco.meini.1979@gmail.com` / display name `Marco`).
+
+```bash
+# Esempio con psql (adatta host/db/user)
+psql -h 127.0.0.1 -U postgres -d app -f db/migrations/dimmelo_users.sql
+```
+
+Aggiungere un utente autorizzato:
+
+```sql
+INSERT INTO dimmelo_users (email, display_name)
+VALUES ('nome.cognome@gmail.com', 'Nome')
+ON CONFLICT (email) DO UPDATE SET display_name = EXCLUDED.display_name;
+```
+
+L’email va in **minuscolo** (vincolo `CHECK`). Il `display_name` compare nell’header chat (`GET /api/auth/me` → `name`).
+
+#### Deploy pubblico (HTTPS)
+
+- Imposta `auth.enabled: true`, `publicApiUrl` e `publicAppUrl` con l’URL HTTPS reale.
+- Preferisci **un solo dominio**: reverse proxy che serve Angular su `/` e inoltra `/api/*` al backend Node. Cookie `SameSite=Lax` + `Secure` funzionano senza CORS cross-site.
+- Se UI e API restano su host diversi, configura `server.corsOrigin` con l’origine del frontend e verifica che CORS usi `credentials: true` (già impostato in `be/server/index.mjs`).
+
+Route auth:
+
+| Metodo | Path | Descrizione |
+|--------|------|-------------|
+| GET | `/api/auth/google` | Avvia login Google |
+| GET | `/api/auth/google/callback` | Callback OAuth (redirect interno) |
+| GET | `/api/auth/logout` | Cancella cookie sessione |
+| GET | `/api/auth/me` | `{ email, name, authEnabled }` per l’UI |
+
+`GET /api/health` resta pubblico (monitoring).
 
 ## Database
 
@@ -245,7 +306,7 @@ ORDER BY pp.ordine_arrivo NULLS LAST, pp.canape;
 
 Esempio: Oca `ordine_arrivo=1`, Bruco `2`, Selva `3`, Valdimontone `4`; le altre contrade al canape con `ordine_arrivo` NULL.
 
-## Palio Chat (AI + database)
+## Dimmelo (AI + database)
 
 Web app in [`fe/`](fe/) per interrogare il database in linguaggio naturale. Il backend ([`be/server/`](be/server/)) usa **Claude** (Anthropic) con tool che invocano la skill Postgres (`scripts/postgres`) in **sola lettura**.
 
@@ -288,3 +349,5 @@ Per aggiungere componenti [Spartan-ng](https://www.spartan.ng) in seguito: `cd f
 ### Sicurezza
 
 La chat non può eseguire `INSERT`, `UPDATE`, `DELETE`, DDL o migration: solo `SELECT` / `WITH` / `EXPLAIN`.
+
+Con `auth.enabled: true`, solo le email in `dimmelo_users` possono avviare richieste chat (cookie httpOnly; nessun token Google nel browser). In produzione usa sempre HTTPS e `auth.enabled: true`.

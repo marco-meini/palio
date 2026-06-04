@@ -11,7 +11,10 @@ const projectRoot = path.resolve(__dirname, '../..');
  *   cp be/config/config.example.mjs be/config/config.mjs
  */
 export default {
-  /** Connessione pg diretta (task palio.org, Model) */
+  /**
+   * Connessione pg diretta (task palio.org, Model).
+   * L'API auth/chat usa loadPgConfig(postgres.profile) da .skills/postgres/config.toml.
+   */
   db: {
     host: '127.0.0.1',
     port: 5432,
@@ -37,11 +40,36 @@ export default {
     maxToolResultChars: 6000,
     maxHistoryMessages: 10,
     maxMessageChars: 4000,
+    /** Compatta tabelle CLI in markdown prima di inviarle al modello */
+    compactToolResults: true,
+    /** Righe massime nelle tabelle compattate */
+    maxToolResultRows: 50,
   },
 
   /** API HTTP (be/server) */
   server: {
     port: 3001,
     corsOrigin: 'http://localhost:4200',
+  },
+
+  /**
+   * Autenticazione OAuth Google.
+   * Con enabled: true la chat e POST /api/chat richiedono sessione valida; senza cookie → 401 e redirect a /login.
+   * Se clientId/clientSecret mancano (in config e in google-oauth.json) o sono placeholder, l'API parte comunque; /api/auth/google risponde 503 finché non configuri OAuth.
+   * In dev locale puoi usare enabled: false per saltare il login (l'API risponde authEnabled: false).
+   */
+  auth: {
+    enabled: false,
+    /** ≥32 caratteri; genera con: openssl rand -base64 48 */
+    sessionSecret: '',
+    sessionTtlSeconds: 604800,
+    google: {
+      /** Opzionale: lascia vuoto e usa be/config/google-oauth.json (vedi google-oauth.example.json) */
+      clientId: '',
+      clientSecret: '',
+    },
+    /** Utenti autorizzati: tabella Postgres `dimmelo_users` (vedi db/migrations/dimmelo_users.sql). */
+    publicApiUrl: 'http://localhost:3001',
+    publicAppUrl: 'http://localhost:4200',
   },
 };

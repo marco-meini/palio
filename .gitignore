@@ -7,4 +7,5 @@ fe/package-lock.json
 be/package-lock.json
 
 be/config/config.mjs
+be/config/google-oauth.json
 .skills/postgres/config.toml

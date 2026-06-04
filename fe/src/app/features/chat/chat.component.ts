@@ -8,6 +8,8 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { AuthService } from '../../core/services/auth.service';
 import {
   ChatApiService,
   ChatMessage,
@@ -17,7 +19,7 @@ import { renderMarkdown } from '../../core/utils/markdown';
 const WELCOME: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
-  content: `Ciao! Sono l'assistente Palio: interrogo il database locale (sola lettura) per rispondere su edizioni, contrade, cavalli e risultati.
+  content: `Ciao! Sono Dimmelo: interrogo il database del Palio di Siena per rispondere su edizioni, contrade, cavalli e risultati.
 
 Esempi di domande:
 - *Quali cavalli hanno corso in due palii consecutivi in anni diversi?*
@@ -37,17 +39,12 @@ Scrivi pure la tua domanda qui sotto.`,
       <header
         class="border-b border-stone-200/80 bg-white/80 px-4 py-4 backdrop-blur sm:px-6"
       >
-        <div class="mx-auto flex max-w-3xl items-center gap-3">
-          <div
-            class="flex h-10 w-10 items-center justify-center rounded-full bg-amber-700 text-sm font-bold text-white shadow-sm"
-            aria-hidden="true"
-          >
-            PS
-          </div>
-          <div>
-            <h1 class="text-lg font-semibold text-stone-900">Palio Chat</h1>
-            <p class="text-sm text-stone-500">Database Palio di Siena · sola lettura</p>
-          </div>
+        <div class="mx-auto max-w-3xl">
+          <h1 class="text-lg font-semibold text-stone-900">Dimmelo</h1>
+          @if (displayName()) {
+            <p class="text-sm text-stone-600">Ciao, {{ displayName() }}</p>
+          }
+          <p class="text-sm text-stone-500">Database Palio di Siena</p>
         </div>
       </header>
 
@@ -153,7 +150,11 @@ Scrivi pure la tua domanda qui sotto.`,
   `,
 })
 export class ChatComponent implements OnDestroy {
+  private readonly auth = inject(AuthService);
   private readonly chatApi = new ChatApiService();
+  private readonly router = inject(Router);
+
+  protected readonly displayName = this.auth.displayName;
   private abortController: AbortController | null = null;
 
   protected readonly scrollContainer = viewChild<ElementRef<HTMLElement>>('scrollContainer');
@@ -215,6 +216,9 @@ export class ChatComponent implements OnDestroy {
           reply += delta;
         },
         onError: (message) => this.error.set(message),
+        onUnauthorized: () => {
+          void this.router.navigate(['/login']);
+        },
       });
 
       if (reply.trim()) {

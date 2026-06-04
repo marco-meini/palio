@@ -17,6 +17,7 @@ export interface ChatStreamCallbacks {
 
 export interface SendChatOptions extends ChatStreamCallbacks {
   signal?: AbortSignal;
+  onUnauthorized?: () => void;
 }
 
 function parseSseBlock(block: string): { event: string; data: string } | null {
@@ -46,7 +47,15 @@ export class ChatApiService {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ messages }),
       signal: options.signal,
+      credentials: 'include',
     });
+
+    if (response.status === 401) {
+      const message = 'Sessione scaduta. Accedi di nuovo per continuare.';
+      options.onUnauthorized?.();
+      options.onError?.(message);
+      throw new Error(message);
+    }
 
     if (!response.ok) {
       let message = `Errore HTTP ${response.status}`;

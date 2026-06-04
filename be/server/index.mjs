@@ -1,7 +1,11 @@
 import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import config from '../config/config.mjs';
+import { mergeGoogleOAuthCredentials } from '../config/load-google-oauth.mjs';
+import { loadPgConfig } from '../lib/db-config.js';
+import { PgClientManager } from '../lib/pg-client-manager.mjs';
 import { profileTest } from '../lib/postgres-cli.mjs';
+import { createRequireAuth, registerAuth } from './auth.mjs';
 import { runChatAgent } from './chat-agent.mjs';
 
 const PORT = config.server.port;
@@ -37,7 +41,19 @@ const app = Fastify({ logger: true });
 await app.register(cors, {
   origin: CORS_ORIGIN,
   methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
 });
+
+const auth = {
+  ...config.auth,
+  google: mergeGoogleOAuthCredentials(config.auth?.google),
+};
+
+const pg = new PgClientManager(loadPgConfig(config.postgres?.profile ?? 'local'));
+
+await registerAuth(app, auth, pg);
+
+const requireAuth = createRequireAuth(auth, pg);
 
 app.get('/api/health', async (_request, reply) => {
   try {
@@ -51,7 +67,7 @@ app.get('/api/health', async (_request, reply) => {
   }
 });
 
-app.post('/api/chat', async (request, reply) => {
+app.post('/api/chat', { preHandler: requireAuth }, async (request, reply) => {
   const body = /** @type {{ messages?: Array<{ role: string; content: string }> }} */ (
     request.body ?? {}
   );

@@ -1,5 +1,8 @@
 ## WIP
 
+### dimmelo_users.sql
+- `dimmelo_users` — email (unique, lowercase), `display_name`, `created_at`; seed Marco
+
 ### prerelease.sql
 - `palii`, anagrafiche, `palio_partecipazioni` con colonna **`canape`** (1–9 posto canape, **10** = rincorsa `R`)
 - `palio_partecipazioni.non_partecipa` — contrada estratta ma non corre (`N.P.` sul sito): `canape`, `cavallo_id`, `fantino_id` NULL

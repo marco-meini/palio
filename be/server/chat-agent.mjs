@@ -2,6 +2,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { streamText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import config from '../config/config.mjs';
+import { compactToolResult } from '../lib/compact-tool-result.mjs';
 import {
   findObjects,
   listTables,
@@ -9,6 +10,7 @@ import {
   schemaInspect,
   truncateForModel,
 } from '../lib/postgres-cli.mjs';
+import { RECIPE_IDS, runPalioRecipe } from '../lib/palio-recipes.mjs';
 
 const anthropic = createAnthropic({ apiKey: config.anthropic.apiKey });
 
@@ -17,27 +19,30 @@ const MAX_OUTPUT_TOKENS = config.anthropic.maxOutputTokens ?? 4096;
 const MAX_TOOL_RESULT_CHARS = config.anthropic.maxToolResultChars ?? 6000;
 const MAX_HISTORY_MESSAGES = config.anthropic.maxHistoryMessages ?? 10;
 const MAX_MESSAGE_CHARS = config.anthropic.maxMessageChars ?? 4000;
+const COMPACT_TOOL_RESULTS = config.anthropic.compactToolResults ?? true;
+const MAX_TOOL_RESULT_ROWS = config.anthropic.maxToolResultRows ?? 50;
 
 const SYSTEM_PROMPT = `Sei un assistente esperto del Palio di Siena. Rispondi in italiano usando SOLO dati dal database PostgreSQL tramite i tool forniti.
 
-Regole:
-- Non inventare numeri o fatti: interroga il DB prima di rispondere.
-- Usa get_schema solo se ti serve il dettaglio colonne; altrimenti usa lo schema sintetico qui sotto.
-- Preferisci query SQL mirate (LIMIT, filtri) invece di SELECT * su tabelle grandi.
-- Le edizioni del Palio sono ordinate per data_palio, poi id su palii.
-- Edizioni consecutive = due palii adiacenti in quell'ordine (tipicamente agosto anno N e luglio anno N+1).
+Strategia (risparmio token — segui nell'ordine):
+1. Se la domanda corrisponde a una ricetta nota, usa **solo** run_palio_recipe (una chiamata). Ricette:
+   - same_horse_consecutive_cross_year: stesso cavallo in due palii consecutivi (anni diversi)
+   - wins_by_contrada: vittorie di una contrada (param contrada; opz. year_from, year_to)
+   - last_win: ultima vittoria di una contrada (param contrada)
+   - palio_participants: partecipanti di un palio (param source_code O data_palio YYYY-MM-DD)
+2. Altrimenti usa **una sola** run_readonly_sql con SELECT mirato, JOIN necessari e LIMIT adeguato.
+3. Non usare get_schema né search_schema salvo se manca una colonna/tabella indispensabile.
+
+Regole risposta:
+- Non inventare dati.
+- Edizioni consecutive = ordine data_palio, id su palii.
 - Stesso cavallo = stesso cavallo_id.
-- Per le vittorie, evidenzia la data del palio in **grassetto** (markdown).
-- Presenta risultati in markdown compatto.
-- Non eseguire mai modifiche al database.
+- Vittorie: data del palio in **grassetto** (markdown).
+- Markdown compatto; nessuna modifica al DB.
 
 Schema sintetico:
-- palii: id, source_code, data_palio, straordinario
-- contrade: id, name
-- cavalli: id, source_id, nome
-- fantini: id, source_id, nome, soprannome
-- palio_partecipazioni: palio_id, contrada_id, vincitrice, non_partecipa, canape, cavallo_id, fantino_id, ordine, estratta, estratta_da_id, ordine_assegnazione, orecchio, coscia, proprietario_cavallo, cavallo_preso_da, ordine_arrivo
-- palio_partecipazione_mangini, capitani, priori, barbareschi, mangini`;
+palii(source_code,data_palio,straordinario); contrade(name); cavalli(nome); fantini(nome,soprannome);
+palio_partecipazioni(palio_id,contrada_id,vincitrice,non_partecipa,canape,cavallo_id,fantino_id,ordine_arrivo,…).`;
 
 /**
  * @param {import('ai').ModelMessage[]} messages
@@ -58,7 +63,12 @@ export function trimMessagesForModel(messages) {
  */
 function wrapToolResult(value) {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return truncateForModel(text, MAX_TOOL_RESULT_CHARS);
+  const compacted = compactToolResult(text, {
+    enabled: COMPACT_TOOL_RESULTS,
+    maxRows: MAX_TOOL_RESULT_ROWS,
+    maxChars: MAX_TOOL_RESULT_CHARS,
+  });
+  return truncateForModel(compacted, MAX_TOOL_RESULT_CHARS);
 }
 
 /**
@@ -84,14 +94,33 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd }) {
     maxRetries: 1,
     stopWhen: stepCountIs(MAX_TOOL_STEPS),
     tools: {
+      run_palio_recipe: tool({
+        description:
+          'Query predefinite Palio (preferire rispetto a SQL libero). Una sola chiamata per domanda.',
+        inputSchema: z.object({
+          recipe: z.enum(RECIPE_IDS),
+          contrada: z.string().optional(),
+          year_from: z.number().int().optional(),
+          year_to: z.number().int().optional(),
+          source_code: z.string().optional(),
+          data_palio: z.string().optional(),
+        }),
+        execute: async (params) => {
+          onToolStart?.('run_palio_recipe');
+          try {
+            const { recipe, ...rest } = params;
+            console.info('[chat-recipe]', recipe, rest);
+            return wrapToolResult(await runPalioRecipe(recipe, rest));
+          } finally {
+            onToolEnd?.('run_palio_recipe');
+          }
+        },
+      }),
       get_schema: tool({
         description:
-          'Elenco tabelle o dettaglio schema. Usa tables_only=true di default; full_inspect solo se servono le colonne.',
+          'Solo se indispensabile. Default: elenco tabelle; full_inspect=true solo per colonne.',
         inputSchema: z.object({
-          full_inspect: z
-            .boolean()
-            .optional()
-            .describe('true = schema inspect completo (pesante); default = solo elenco tabelle'),
+          full_inspect: z.boolean().optional(),
           refresh: z.boolean().optional(),
         }),
         execute: async ({ full_inspect, refresh }) => {
@@ -107,7 +136,7 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd }) {
         },
       }),
       search_schema: tool({
-        description: 'Cerca tabelle/colonne per nome (query find).',
+        description: 'Solo se indispensabile: cerca tabelle/colonne per nome.',
         inputSchema: z.object({
           pattern: z.string(),
           types: z.string().optional(),
@@ -125,7 +154,7 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd }) {
       }),
       run_readonly_sql: tool({
         description:
-          'SQL read-only (SELECT/WITH). Usa LIMIT; evita SELECT * senza filtro.',
+          'SQL read-only solo se nessuna ricetta applica. Una query con LIMIT.',
         inputSchema: z.object({
           sql: z.string(),
           intent: z.string().optional(),
