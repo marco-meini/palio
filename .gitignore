@@ -2,10 +2,6 @@ node_modules
 fe/node_modules
 be/node_modules
 
-package-lock.json
-fe/package-lock.json
-be/package-lock.json
-
 be/config/config.mjs
 be/config/google-oauth.json
 .env.production
