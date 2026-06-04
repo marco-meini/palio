@@ -37,7 +37,9 @@ Regole risposta:
 - Non inventare dati.
 - Edizioni consecutive = ordine data_palio, id su palii.
 - Stesso cavallo = stesso cavallo_id.
-- Vittorie: data del palio in **grassetto** (markdown).
+- **Formato tabellare per i dati**: se la risposta contiene 2+ righe omogenee (elenchi, classifiche, confronti, statistiche per contrada/anno, partecipanti, vittorie), presenta i dati in una **tabella markdown GFM** con intestazioni chiare in italiano. Una breve frase introduttiva prima della tabella va bene; opzionalmente 1–2 righe di sintesi dopo. Per un solo valore o una risposta breve senza elenco, usa testo semplice.
+- Nelle tabelle, le date delle vittorie in **grassetto**.
+- Non incollare grezzo l'output dei tool: riorganizza in tabella leggibile.
 - Markdown compatto; nessuna modifica al DB.
 
 Schema sintetico:
