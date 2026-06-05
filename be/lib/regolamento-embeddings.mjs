@@ -1,15 +1,25 @@
-import { pipeline } from '@xenova/transformers';
-
 export const EMBEDDING_MODEL = 'Xenova/multilingual-e5-small';
 
 /** @type {import('@xenova/transformers').FeatureExtractionPipeline | null} */
 let extractor = null;
+
+/** @type {typeof import('@xenova/transformers').pipeline | null} */
+let pipelineFn = null;
+
+async function loadPipeline() {
+  if (!pipelineFn) {
+    const { pipeline } = await import('@xenova/transformers');
+    pipelineFn = pipeline;
+  }
+  return pipelineFn;
+}
 
 /**
  * @returns {Promise<import('@xenova/transformers').FeatureExtractionPipeline>}
  */
 export async function getExtractor() {
   if (!extractor) {
+    const pipeline = await loadPipeline();
     extractor = await pipeline('feature-extraction', EMBEDDING_MODEL);
   }
   return extractor;
