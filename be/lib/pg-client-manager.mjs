@@ -2,7 +2,10 @@ import pg from "pg";
 
 export class PgClientManager {
   constructor(config, __logger) {
-    this.__pool = new pg.Pool(config);
+    this.__pool = new pg.Pool({
+      ...config,
+      connectionTimeoutMillis: config.connectionTimeoutMillis ?? 5000,
+    });
   }
 
   async startTransaction() {

@@ -147,17 +147,22 @@ log "Stato container:"
 docker_compose ps
 
 if ! $SKIP_HEALTH; then
-  log "Attendo health check (${HEALTH_URL})…"
+  log "Attendo health check (${HEALTH_URL}, max ${HEALTH_RETRIES} tentativi)…"
   ok=false
   for ((i = 1; i <= HEALTH_RETRIES; i++)); do
-    if curl -fsS "$HEALTH_URL" >/tmp/palio-health.json 2>/dev/null; then
+    if curl -fsS --max-time 5 "$HEALTH_URL" >/tmp/palio-health.json 2>/dev/null; then
       ok=true
       break
+    fi
+    if (( i == 1 || i % 5 == 0 )); then
+      log "  tentativo ${i}/${HEALTH_RETRIES}…"
     fi
     sleep 2
   done
   if ! $ok; then
-    die "Health check fallito dopo ${HEALTH_RETRIES} tentativi. Log BE: ${DOCKER[*]} compose logs --tail=80 be"
+    log "Ultimi log backend:"
+    docker_compose logs --tail=40 be || true
+    die "Health check fallito dopo ${HEALTH_RETRIES} tentativi. Diagnostica: ${DOCKER[*]} compose ps && ${DOCKER[*]} compose logs --tail=80 be"
   fi
   log "Health OK: $(cat /tmp/palio-health.json)"
   rm -f /tmp/palio-health.json
