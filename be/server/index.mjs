@@ -1,7 +1,7 @@
 import cors from '@fastify/cors';
 import Fastify from 'fastify';
 import config from '../config/load-config.mjs';
-import { loadPgConfig } from '../lib/db-config.js';
+import { resolveApiPgConfig } from '../lib/db-config.js';
 import { PgClientManager } from '../lib/pg-client-manager.mjs';
 import { initPostgresCliPool, profileTest } from '../lib/postgres-cli.mjs';
 import { createRequireAuth, registerAuth } from './auth.mjs';
@@ -45,9 +45,7 @@ await app.register(cors, {
 
 const auth = config.auth;
 
-const pg = new PgClientManager(
-  loadPgConfig(process.env.DB_PROFILE || config.postgres?.profile || 'local'),
-);
+const pg = new PgClientManager(resolveApiPgConfig(config));
 initPostgresCliPool(pg);
 
 await registerAuth(app, auth, pg);

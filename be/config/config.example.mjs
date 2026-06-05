@@ -12,8 +12,8 @@ const projectRoot = path.resolve(__dirname, '../..');
  */
 export default {
   /**
-   * Connessione pg diretta (task palio.org, Model).
-   * L'API auth/chat usa loadPgConfig(postgres.profile) da .skills/postgres/config.toml.
+   * Connessione Postgres per API auth/chat in dev (se DATABASE_URL non è impostata).
+   * I task scraper possono usare ancora .skills/postgres/config.toml via loadPgConfig().
    */
   db: {
     host: '127.0.0.1',

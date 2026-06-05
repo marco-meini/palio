@@ -3,8 +3,8 @@
 export const DOMAIN_TERMINOLOGY = `Terminologia e convenzioni (rispetta sempre nella risposta):
 - **Fantini**: preferisci il soprannome; se serve identificazione completa e sono disponibili entrambi, usa «{nome} detto {soprannome}»; se manca il soprannome, usa il nome.
 - **Mangini**: nella terminologia paliese sono anche detti *fiduciari* o *tententi*. Tabella \`mangini\` collegata con \`palio_partecipazione_mangini(partecipazione_id, mangini_id, ordine)\`.
-- **canape**: posizione nei canapi per la mossa (1–9); **10 = Rincorsa**. Se la contrada in rincorsa ha \`non_partecipa=true\`, la rincorsa scala (spiega a parole, non ricalcolare in SQL).
-- **ordine** e **estratta**: ordine di estrazione per la partecipazione; sinonimo corrente *posto alle trifore* (bandiera in palazzo comunale). \`estratta=true\` = contrada estratta a sorte mentre le altre correvano di diritto.
+- **canape** (colonna \`canape\`): posizione **al canape** per la mossa (1–9); **solo qui** il valore **10** si chiama **Rincorsa** (sul sito «R»). Se la contrada in rincorsa ha \`non_partecipa=true\`, la rincorsa scala (spiega a parole, non ricalcolare in SQL).
+- **ordine** (colonna \`ordine\`) e **estratta**: ordine di **estrazione** / *posto alle trifore* (dove viene appesa la bandiera in palazzo comunale), valori 1–10. **Non** usare il termine *rincorsa* per \`ordine\`: l'ordine 10 alle trifore resta «10» o «10° posto alle trifore», non «rincorsa». \`canape\` e \`ordine\` sono campi distinti e non vanno mescolati nelle risposte. \`estratta=true\` = contrada estratta a sorte mentre le altre correvano di diritto; se \`estratta_da_id\` coincide con la stessa contrada = autoestrazione.
 - **ordine_assegnazione**: ordine con cui è stato assegnato a sorte il cavallo nel giorno della tratta.
 - **orecchio** (1–10): numero dato al cavallo per l'assegnazione in tratta.
 - **coscia** (1–N, N = cavalli presentati): numero per le batterie di selezione; l'orecchio segue l'ordine delle coscie scelte (es. coscia 4→orecchio 1, 9→2, 12→3, 13→4…).
@@ -36,6 +36,7 @@ export const DOMAIN_STRATEGY = `Strategia (risparmio token — segui nell'ordine
 
 export const DOMAIN_RESPONSE_RULES = `Regole risposta:
 - Non inventare dati.
+- **Rincorsa** solo per \`canape = 10\`; mai per \`ordine\` / posto alle trifore (anche se il numero è 10).
 - Edizioni consecutive = ordine data_palio, id su palii.
 - Stesso cavallo = stesso cavallo_id.
 - **Formato tabellare per i dati**: se la risposta contiene 2+ righe omogenee (elenchi, classifiche, confronti, statistiche per contrada/anno, partecipanti, vittorie), presenta i dati in una **tabella markdown GFM** con intestazioni chiare in italiano. Una breve frase introduttiva prima della tabella va bene; opzionalmente 1–2 righe di sintesi dopo. Per un solo valore o una risposta breve senza elenco, usa testo semplice.

@@ -42,3 +42,26 @@ export function loadPgConfig(profile = process.env.DB_PROFILE || 'local') {
     password: pick('password'),
   };
 }
+
+/**
+ * Connessione per API (auth/chat): DATABASE_URL → config.db → profilo skill Postgres.
+ * @param {{ db?: { host?: string; port?: number; database?: string; user?: string; password?: string }; postgres?: { profile?: string } }} [config]
+ */
+export function resolveApiPgConfig(config = {}) {
+  if (process.env.DATABASE_URL) {
+    return loadPgConfig();
+  }
+
+  const db = config.db;
+  if (db?.host) {
+    return {
+      host: db.host,
+      port: db.port ?? 5432,
+      database: db.database,
+      user: db.user,
+      password: db.password,
+    };
+  }
+
+  return loadPgConfig(process.env.DB_PROFILE || config.postgres?.profile || 'local');
+}
