@@ -48,7 +48,7 @@ export default {
 
   /** Regolamento Palio — RAG (indice generato con npm run index-regolamento) */
   regolamento: {
-    indexPath: 'be/data/regolamento-index.json',
+    indexPath: 'data/regolamento-index.json',
     topK: 5,
     minScore: 0.35,
   },

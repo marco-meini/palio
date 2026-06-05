@@ -87,6 +87,10 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd }) {
           try {
             console.info('[chat-regolamento]', query.slice(0, 200));
             return wrapToolResult(await searchRegolamento(query));
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error('[chat-regolamento]', message);
+            return wrapToolResult(`Errore ricerca regolamento: ${message}`);
           } finally {
             onToolEnd?.('search_regolamento');
           }

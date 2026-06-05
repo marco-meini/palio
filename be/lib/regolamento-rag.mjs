@@ -8,7 +8,8 @@ import {
 } from './regolamento-embeddings.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const defaultIndexPath = path.resolve(__dirname, '../data/regolamento-index.json');
+const BE_ROOT = path.resolve(__dirname, '..');
+const defaultIndexPath = path.join(BE_ROOT, 'data/regolamento-index.json');
 
 /**
  * @typedef {{ id: string; text: string; section: string | null; page: number | null; embedding: number[] }} RegolamentoChunk
@@ -26,7 +27,7 @@ export function resolveIndexPath() {
   if (!configured) return defaultIndexPath;
   return path.isAbsolute(configured)
     ? configured
-    : path.resolve(__dirname, '../..', configured);
+    : path.resolve(BE_ROOT, configured);
 }
 
 /**
