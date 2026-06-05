@@ -46,6 +46,13 @@ export default {
     maxToolResultRows: 50,
   },
 
+  /** Regolamento Palio — RAG (indice generato con npm run index-regolamento) */
+  regolamento: {
+    indexPath: 'be/data/regolamento-index.json',
+    topK: 5,
+    minScore: 0.35,
+  },
+
   /** API HTTP (be/server) */
   server: {
     port: 3001,

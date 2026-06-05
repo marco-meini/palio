@@ -125,13 +125,19 @@ Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, conta
    # DATABASE_URL=postgresql://postgres:PASSWORD@postgres:5432/palio
    # AUTH_*, ANTHROPIC_API_KEY, GOOGLE_CLIENT_ID/SECRET (o volume google-oauth.json)
    ```
-3. Avvia stack (FE su `127.0.0.1:8080`, BE solo rete interna):
+3. Genera l’indice regolamento (una tantum, o dopo aggiornamento PDF):
    ```bash
-   docker compose up -d --build
+   cd be && npm run index-regolamento
    ```
-4. Caddy — aggiungi il blocco in [`docker/caddy-dimmelo.snippet`](docker/caddy-dimmelo.snippet) a `/etc/caddy/Caddyfile`, poi `sudo systemctl reload caddy`.
-5. Google OAuth redirect URI: `https://dimmelo.marcomeini.it/api/auth/google/callback`
-6. Verifica: `curl -s https://dimmelo.marcomeini.it/api/health`
+4. Avvia stack (FE su `127.0.0.1:8080`, BE solo rete interna):
+   ```bash
+   chmod +x deploy.sh
+   ./deploy.sh
+   ```
+   Lo script esegue sempre `git pull` prima del build. Opzioni: `--skip-build`, `--skip-health`.
+5. Caddy — al primo deploy aggiungi il blocco in [`docker/caddy-dimmelo.snippet`](docker/caddy-dimmelo.snippet) a `/etc/caddy/Caddyfile` (con sudo). `./deploy.sh` ricarica Caddy automaticamente (`sudo systemctl reload caddy`) a ogni run.
+6. Google OAuth redirect URI: `https://dimmelo.marcomeini.it/api/auth/google/callback`
+7. Verifica: `curl -s https://dimmelo.marcomeini.it/api/health`
 
 In Docker il backend usa **`DATABASE_URL`** e il driver `pg` (non la skill Postgres CLI). In dev locale resta `config.mjs` + skill CLI.
 
@@ -361,6 +367,20 @@ Oppure due terminali: `npm run dev:api` e `npm run dev:fe`.
 - UI: http://localhost:4200  
 - Health: http://localhost:3001/api/health  
 
+### Regolamento (RAG)
+
+Dimmelo può rispondere anche su **regole e regolamento ufficiale** tramite il tool `search_regolamento`, che interroga un indice vettoriale generato dal PDF in [`be/doc/Regolamento per il Palio.pdf`](be/doc/Regolamento%20per%20il%20Palio.pdf).
+
+Dopo aver aggiornato il PDF (o al primo setup):
+
+```bash
+cd be && npm run index-regolamento
+```
+
+Lo script estrae il testo (OCR se il PDF è scansionato; richiede **poppler**: `brew install poppler`), calcola gli embedding e scrive `be/data/regolamento-index.json`. Il file va versionato o rigenerato in deploy.
+
+Opzioni in `be/config/config.mjs` → `regolamento.indexPath`, `regolamento.topK`, `regolamento.minScore`.
+
 ### Stack
 
 | Parte | Tecnologie |
@@ -368,6 +388,7 @@ Oppure due terminali: `npm run dev:api` e `npm run dev:fe`.
 | Frontend | Angular 21, Tailwind CSS 4, UI stile Spartan/shadcn (Tailwind) |
 | Backend | Fastify, Vercel AI SDK, `@ai-sdk/anthropic` |
 | DB | Postgres skill CLI (`query run`, `schema inspect`, `query find`) |
+| Regolamento | Embedding locali (`@xenova/transformers`), indice JSON, OCR (`tesseract.js` + `pdftoppm`) |
 
 Per aggiungere componenti [Spartan-ng](https://www.spartan.ng) in seguito: `cd fe && npx @spartan-ng/cli init` (richiede rete/registry).
 

@@ -4,19 +4,26 @@
   "type": "module",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "dev:api": "node server/index.mjs"
+    "dev:api": "node server/index.mjs",
+    "index-regolamento": "node tasks/index-regolamento.mjs"
+  },
+  "overrides": {
+    "protobufjs": "^7.5.5"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^2.0.0",
+    "@ai-sdk/anthropic": "^3.0.81",
     "@fastify/cookie": "^11.0.0",
     "@fastify/cors": "^10.0.0",
     "@fastify/oauth2": "^8.0.0",
-    "ai": "^5.0.0",
+    "@xenova/transformers": "^2.17.2",
+    "ai": "^6.0.0",
     "cheerio": "^1.0.0",
     "fastify": "^5.0.0",
     "jose": "^6.0.0",
     "moment": "^2.29.4",
+    "pdf-parse": "^1.1.1",
     "pg": "^8.13.1",
-    "zod": "^3.24.0"
+    "tesseract.js": "^7.0.0",
+    "zod": "^3.25.76"
   }
 }

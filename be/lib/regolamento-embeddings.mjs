@@ -1,0 +1,118 @@
+import { pipeline } from '@xenova/transformers';
+
+export const EMBEDDING_MODEL = 'Xenova/multilingual-e5-small';
+
+/** @type {import('@xenova/transformers').FeatureExtractionPipeline | null} */
+let extractor = null;
+
+/**
+ * @returns {Promise<import('@xenova/transformers').FeatureExtractionPipeline>}
+ */
+export async function getExtractor() {
+  if (!extractor) {
+    extractor = await pipeline('feature-extraction', EMBEDDING_MODEL);
+  }
+  return extractor;
+}
+
+/**
+ * @param {number[]} a
+ * @param {number[]} b
+ * @returns {number}
+ */
+export function cosineSimilarity(a, b) {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/**
+ * @param {string} text
+ * @param {'query' | 'passage'} mode
+ * @returns {Promise<number[]>}
+ */
+export async function embedText(text, mode = 'passage') {
+  const model = await getExtractor();
+  const prefix = mode === 'query' ? 'query: ' : 'passage: ';
+  const output = await model(prefix + text, { pooling: 'mean', normalize: true });
+  return Array.from(output.data);
+}
+
+/**
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeRegolamentoText(text) {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\u00ad/g, '')
+    .replace(/-\n(?=\w)/g, '')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * @param {string} text
+ * @param {{ chunkSize?: number; overlap?: number }} [opts]
+ * @returns {Array<{ text: string; section: string | null; page: number | null }>}
+ */
+export function chunkRegolamentoText(text, opts = {}) {
+  const chunkSize = opts.chunkSize ?? 550;
+  const overlap = opts.overlap ?? 80;
+  const normalized = normalizeRegolamentoText(text);
+  const paragraphs = normalized.split(/\n\n+/).map((p) => p.trim()).filter(Boolean);
+
+  /** @type {Array<{ text: string; section: string | null; page: number | null }>} */
+  const chunks = [];
+  let buffer = '';
+  let currentSection = null;
+
+  const flush = () => {
+    const trimmed = buffer.trim();
+    if (!trimmed) return;
+    chunks.push({
+      text: trimmed,
+      section: currentSection,
+      page: null,
+    });
+    buffer = trimmed.length > overlap ? trimmed.slice(-overlap) : '';
+  };
+
+  for (const para of paragraphs) {
+    const sectionMatch = para.match(/^(?:CAPITOLO|Capitolo|Art\.|Articolo)\s+[\w\d.]+/i);
+    if (sectionMatch) {
+      currentSection = sectionMatch[0];
+    }
+
+    if ((buffer + '\n\n' + para).length <= chunkSize) {
+      buffer = buffer ? `${buffer}\n\n${para}` : para;
+      continue;
+    }
+
+    if (buffer) flush();
+    if (para.length <= chunkSize) {
+      buffer = para;
+      continue;
+    }
+
+    for (let i = 0; i < para.length; i += chunkSize - overlap) {
+      const slice = para.slice(i, i + chunkSize).trim();
+      if (slice) {
+        chunks.push({ text: slice, section: currentSection, page: null });
+      }
+    }
+    buffer = '';
+  }
+
+  if (buffer.trim()) flush();
+  return chunks;
+}

@@ -101,6 +101,8 @@ test('buildRecipeSql — SQL read-only con parametri validati', () => {
   const sql = buildRecipeSql('last_win', { contrada: 'Selva' });
   assert.match(sql, /^SELECT/i);
   assert.match(sql, /c\.name ILIKE 'Selva'/);
+  assert.match(sql, /AS fantino/);
+  assert.match(sql, /fantino_soprannome/);
   assert.match(sql, /LIMIT 1/);
 
   const byId = buildRecipeSql('wins_by_contrada', {
@@ -116,6 +118,9 @@ test('buildRecipeSql — SQL read-only con parametri validati', () => {
     source_code: '201708160',
   });
   assert.match(participants, /source_code = '201708160'/);
+  assert.match(participants, /pp\.estratta/);
+  assert.match(participants, /estratta_da/);
+  assert.match(participants, /AS fantino/);
 
   const crossYear = buildRecipeSql('same_horse_consecutive_cross_year');
   assert.match(crossYear, /prev\.anno <> curr\.anno/);

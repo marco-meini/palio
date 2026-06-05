@@ -11,6 +11,8 @@ import {
   truncateForModel,
 } from '../lib/postgres-cli.mjs';
 import { RECIPE_IDS, runPalioRecipe } from '../lib/palio-recipes.mjs';
+import { searchRegolamento } from '../lib/regolamento-rag.mjs';
+import { buildChatSystemPrompt } from './chat-domain-knowledge.mjs';
 
 const anthropic = createAnthropic({ apiKey: config.anthropic.apiKey });
 
@@ -22,29 +24,7 @@ const MAX_MESSAGE_CHARS = config.anthropic.maxMessageChars ?? 4000;
 const COMPACT_TOOL_RESULTS = config.anthropic.compactToolResults ?? true;
 const MAX_TOOL_RESULT_ROWS = config.anthropic.maxToolResultRows ?? 50;
 
-const SYSTEM_PROMPT = `Sei un assistente esperto del Palio di Siena. Rispondi in italiano usando SOLO dati dal database PostgreSQL tramite i tool forniti.
-
-Strategia (risparmio token — segui nell'ordine):
-1. Se la domanda corrisponde a una ricetta nota, usa **solo** run_palio_recipe (una chiamata). Ricette:
-   - same_horse_consecutive_cross_year: stesso cavallo in due palii consecutivi (anni diversi)
-   - wins_by_contrada: vittorie di una contrada (param contrada; opz. year_from, year_to)
-   - last_win: ultima vittoria di una contrada (param contrada)
-   - palio_participants: partecipanti di un palio (param source_code O data_palio YYYY-MM-DD)
-2. Altrimenti usa **una sola** run_readonly_sql con SELECT mirato, JOIN necessari e LIMIT adeguato.
-3. Non usare get_schema né search_schema salvo se manca una colonna/tabella indispensabile.
-
-Regole risposta:
-- Non inventare dati.
-- Edizioni consecutive = ordine data_palio, id su palii.
-- Stesso cavallo = stesso cavallo_id.
-- **Formato tabellare per i dati**: se la risposta contiene 2+ righe omogenee (elenchi, classifiche, confronti, statistiche per contrada/anno, partecipanti, vittorie), presenta i dati in una **tabella markdown GFM** con intestazioni chiare in italiano. Una breve frase introduttiva prima della tabella va bene; opzionalmente 1–2 righe di sintesi dopo. Per un solo valore o una risposta breve senza elenco, usa testo semplice.
-- Nelle tabelle, le date delle vittorie in **grassetto**.
-- Non incollare grezzo l'output dei tool: riorganizza in tabella leggibile.
-- Markdown compatto; nessuna modifica al DB.
-
-Schema sintetico:
-palii(source_code,data_palio,straordinario); contrade(name); cavalli(nome); fantini(nome,soprannome);
-palio_partecipazioni(palio_id,contrada_id,vincitrice,non_partecipa,canape,cavallo_id,fantino_id,ordine_arrivo,…).`;
+const SYSTEM_PROMPT = buildChatSystemPrompt();
 
 /**
  * @param {import('ai').ModelMessage[]} messages
@@ -96,6 +76,22 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd }) {
     maxRetries: 1,
     stopWhen: stepCountIs(MAX_TOOL_STEPS),
     tools: {
+      search_regolamento: tool({
+        description:
+          'Cerca nel Regolamento ufficiale del Palio. Usare per regole, procedimenti, definizioni ufficiali.',
+        inputSchema: z.object({
+          query: z.string(),
+        }),
+        execute: async ({ query }) => {
+          onToolStart?.('search_regolamento');
+          try {
+            console.info('[chat-regolamento]', query.slice(0, 200));
+            return wrapToolResult(await searchRegolamento(query));
+          } finally {
+            onToolEnd?.('search_regolamento');
+          }
+        },
+      }),
       run_palio_recipe: tool({
         description:
           'Query predefinite Palio (preferire rispetto a SQL libero). Una sola chiamata per domanda.',

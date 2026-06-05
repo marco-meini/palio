@@ -10,6 +10,7 @@ COPY config/load-config.mjs config/load-config.mjs
 COPY config/load-google-oauth.mjs config/load-google-oauth.mjs
 COPY lib lib/
 COPY server server/
+COPY data/regolamento-index.json data/regolamento-index.json
 
 ENV NODE_ENV=production
 

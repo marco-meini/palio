@@ -15,6 +15,12 @@ export const RECIPE_IDS = RECIPE_NAMES;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const SOURCE_CODE_RE = /^\d{9}$/;
 
+/** Espressione SQL per etichetta fantino (soprannome preferito, altrimenti nome). */
+export const FANTINO_LABEL_SQL = `CASE
+  WHEN f.id IS NULL THEN NULL
+  ELSE COALESCE(NULLIF(TRIM(f.soprannome), ''), NULLIF(TRIM(f.nome), ''))
+END`;
+
 /**
  * @param {unknown} value
  * @returns {number}
@@ -187,7 +193,9 @@ SELECT
   p.straordinario,
   c.name AS contrada,
   ca.nome AS cavallo,
-  f.soprannome AS fantino
+  ${FANTINO_LABEL_SQL} AS fantino,
+  f.nome AS fantino_nome,
+  f.soprannome AS fantino_soprannome
 FROM palii p
 JOIN palio_partecipazioni pp ON pp.palio_id = p.id
 JOIN contrade c ON c.id = pp.contrada_id
@@ -232,14 +240,19 @@ SELECT
   c.name AS contrada,
   pp.canape,
   pp.ordine,
+  pp.estratta,
+  ec.name AS estratta_da,
   pp.non_partecipa,
   pp.vincitrice,
   ca.nome AS cavallo,
-  f.soprannome AS fantino,
+  ${FANTINO_LABEL_SQL} AS fantino,
+  f.nome AS fantino_nome,
+  f.soprannome AS fantino_soprannome,
   pp.ordine_arrivo
 FROM palii p
 JOIN palio_partecipazioni pp ON pp.palio_id = p.id
 JOIN contrade c ON c.id = pp.contrada_id
+LEFT JOIN contrade ec ON ec.id = pp.estratta_da_id
 LEFT JOIN cavalli ca ON ca.id = pp.cavallo_id
 LEFT JOIN fantini f ON f.id = pp.fantino_id
 WHERE ${filters.join(' AND ')}
