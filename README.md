@@ -29,7 +29,7 @@ Opzioni in [`be/config/config.example.mjs`](be/config/config.example.mjs) (copia
 | Chiave | Default | Descrizione |
 |--------|---------|-------------|
 | `anthropic.apiKey` | — | Obbligatoria per la chat |
-| `anthropic.model` | `claude-sonnet-4-20250514` | Modello Claude |
+| `anthropic.model` | `claude-sonnet-4-6` | Modello Claude |
 | `postgres.cli` | `~/.agents/skills/postgres/scripts/postgres` | Launcher skill Postgres |
 | `postgres.projectRoot` | root repo | Directory con `.skills/postgres/config.toml` |
 | `postgres.profile` | `local` | Profilo connessione |

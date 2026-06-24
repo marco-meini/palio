@@ -33,10 +33,13 @@ export default {
   /** Palio Chat — Anthropic */
   anthropic: {
     apiKey: '',
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     /** Riduce il rischio di rate limit (30k input token/min su tier base) */
     maxOutputTokens: 4096,
-    maxToolSteps: 5,
+    /** Step LLM (tool + risposta). Con 5 il modello può esaurire i tool senza rispondere. */
+    maxToolSteps: 12,
+    /** Dopo N ricerche regolamento i tool vengono disabilitati per forzare la risposta. */
+    maxRegolamentoCalls: 2,
     maxToolResultChars: 6000,
     maxHistoryMessages: 10,
     maxMessageChars: 4000,
@@ -49,7 +52,7 @@ export default {
   /** Regolamento Palio — RAG (indice generato con npm run index-regolamento) */
   regolamento: {
     indexPath: 'data/regolamento-index.json',
-    topK: 5,
+    topK: 8,
     minScore: 0.35,
   },
 

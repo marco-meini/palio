@@ -207,30 +207,50 @@ export class ChatComponent implements OnDestroy {
       .filter((m) => m.id !== 'welcome')
       .map((m) => ({ role: m.role, content: m.content }));
 
-    let reply = '';
+    let assistantId: string | null = null;
 
     try {
       await this.chatApi.sendMessage(history, {
         signal: this.abortController.signal,
         onTextDelta: (delta) => {
-          reply += delta;
+          if (!assistantId) {
+            assistantId = crypto.randomUUID();
+            const id = assistantId;
+            this.messages.update((list) => [
+              ...list,
+              {
+                id,
+                role: 'assistant',
+                content: delta,
+                streaming: true,
+              },
+            ]);
+            this.loading.set(false);
+            this.scrollToBottom();
+            return;
+          }
+          const id = assistantId;
+          this.messages.update((list) =>
+            list.map((m) =>
+              m.id === id ? { ...m, content: m.content + delta } : m,
+            ),
+          );
+          this.scrollToBottom();
+        },
+        onDone: () => {
+          if (!assistantId) return;
+          const id = assistantId;
+          this.messages.update((list) =>
+            list.map((m) =>
+              m.id === id ? { ...m, streaming: false } : m,
+            ),
+          );
         },
         onError: (message) => this.error.set(message),
         onUnauthorized: () => {
           void this.router.navigate(['/login']);
         },
       });
-
-      if (reply.trim()) {
-        this.messages.update((list) => [
-          ...list,
-          {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: reply,
-          },
-        ]);
-      }
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {
         const message = err instanceof Error ? err.message : 'Invio fallito';

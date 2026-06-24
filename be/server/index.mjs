@@ -99,8 +99,19 @@ app.post('/api/chat', { preHandler: requireAuth }, async (request, reply) => {
       onToolEvent: (event) => writeSse(res, event.type, { name: event.name }),
     });
 
+    let sentText = false;
     for await (const chunk of result.textStream) {
-      writeSse(res, 'text', { delta: chunk });
+      if (chunk) {
+        sentText = true;
+        writeSse(res, 'text', { delta: chunk });
+      }
+    }
+
+    if (!sentText) {
+      writeSse(res, 'error', {
+        message:
+          'Nessuna risposta generata (limite passi tool raggiunto). Riprova con una domanda più breve.',
+      });
     }
 
     writeSse(res, 'done', {});

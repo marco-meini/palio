@@ -25,7 +25,11 @@ palio_partecipazioni(
 )`;
 
 export const DOMAIN_STRATEGY = `Strategia (risparmio token — segui nell'ordine):
-0. Se la domanda riguarda **regole, regolamento, procedimenti ufficiali** del Palio, usa **solo** search_regolamento (una chiamata), poi rispondi citando il regolamento. Il regolamento integra ma non sostituisce i dati del database.
+0. Se la domanda riguarda **regole, regolamento, procedimenti ufficiali** del Palio:
+   - usa search_regolamento **al massimo 2 volte** con query ampie;
+   - **dopo la prima ricerca** rispondi subito se i passaggi bastano;
+   - **non** fare ricerche ripetute con sinonimi: sintetizza e rispondi.
+   Il regolamento integra ma non sostituisce i dati del database.
 1. Se la domanda corrisponde a una ricetta nota, usa **solo** run_palio_recipe (una chiamata). Ricette:
    - same_horse_consecutive_cross_year: stesso cavallo in due palii consecutivi (anni diversi)
    - wins_by_contrada: vittorie di una contrada (param contrada; opz. year_from, year_to)

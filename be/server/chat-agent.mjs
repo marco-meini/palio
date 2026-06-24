@@ -16,7 +16,9 @@ import { buildChatSystemPrompt } from './chat-domain-knowledge.mjs';
 
 const anthropic = createAnthropic({ apiKey: config.anthropic.apiKey });
 
-const MAX_TOOL_STEPS = config.anthropic.maxToolSteps ?? 5;
+/** Almeno 1 step finale per la risposta testuale dopo i tool. */
+const MAX_TOOL_STEPS = config.anthropic.maxToolSteps ?? 12;
+const MAX_REGOLAMENTO_CALLS = config.anthropic.maxRegolamentoCalls ?? 2;
 const MAX_OUTPUT_TOKENS = config.anthropic.maxOutputTokens ?? 4096;
 const MAX_TOOL_RESULT_CHARS = config.anthropic.maxToolResultChars ?? 6000;
 const MAX_HISTORY_MESSAGES = config.anthropic.maxHistoryMessages ?? 10;
@@ -65,6 +67,15 @@ export function runChatAgent({ messages, onToolEvent }) {
 }
 
 /**
+ * @param {import('ai').StepResult<Record<string, import('ai').Tool>>[]} steps
+ */
+function countRegolamentoCalls(steps) {
+  return steps
+    .flatMap((step) => step.toolCalls ?? [])
+    .filter((call) => call.toolName === 'search_regolamento').length;
+}
+
+/**
  * @param {{ messages: import('ai').ModelMessage[], onToolStart?: (name: string) => void, onToolEnd?: (name: string) => void }} opts
  */
 export function streamPalioChat({ messages, onToolStart, onToolEnd }) {
@@ -75,10 +86,17 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd }) {
     maxOutputTokens: MAX_OUTPUT_TOKENS,
     maxRetries: 1,
     stopWhen: stepCountIs(MAX_TOOL_STEPS),
+    prepareStep: ({ steps }) => {
+      if (countRegolamentoCalls(steps) >= MAX_REGOLAMENTO_CALLS) {
+        return { activeTools: [] };
+      }
+      return {};
+    },
     tools: {
       search_regolamento: tool({
         description:
-          'Cerca nel Regolamento ufficiale del Palio. Usare per regole, procedimenti, definizioni ufficiali.',
+          'Cerca nel Regolamento ufficiale del Palio (max 2 chiamate per domanda). ' +
+          'Usa una query ampia che copra tutti gli aspetti; poi rispondi con i passaggi trovati.',
         inputSchema: z.object({
           query: z.string(),
         }),
@@ -86,7 +104,11 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd }) {
           onToolStart?.('search_regolamento');
           try {
             console.info('[chat-regolamento]', query.slice(0, 200));
-            return wrapToolResult(await searchRegolamento(query));
+            return wrapToolResult(
+              await searchRegolamento(query, {
+                topK: config.regolamento?.topK ?? 8,
+              }),
+            );
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             console.error('[chat-regolamento]', message);
