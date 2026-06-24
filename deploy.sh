@@ -26,7 +26,8 @@ Prerequisiti:
   - Docker e Docker Compose
   - Rete Docker esterna "postgres" con container DB
   - File .env.production (da .env.production.example)
-  - be/data/regolamento-index.json (cd be && npm run index-regolamento)
+  - server/data/regolamento-index.json (cd server && npm run index-regolamento)
+  - server/dist/main.js (npm run build --prefix server)
   - Caddy: blocco dimmelo.marcomeini.it → 127.0.0.1:8080 (vedi docker/caddy-dimmelo.snippet)
 
 Variabili ambiente:
@@ -125,8 +126,11 @@ fi
 "${DOCKER[@]}" network inspect postgres >/dev/null 2>&1 \
   || die "Rete Docker 'postgres' non trovata — creala e collega il container Postgres"
 
-[[ -f be/data/regolamento-index.json ]] \
-  || die "Manca be/data/regolamento-index.json — genera con: cd be && npm run index-regolamento"
+[[ -f server/data/regolamento-index.json ]] \
+  || die "Manca server/data/regolamento-index.json — genera con: cd server && npm run index-regolamento"
+
+[[ -f server/dist/main.js ]] \
+  || die "Manca server/dist/main.js — compila con: npm run build --prefix server"
 
 command -v git >/dev/null 2>&1 || die "git non trovato"
 [[ -d .git ]] || die "Non è un repository git"
@@ -161,8 +165,8 @@ if ! $SKIP_HEALTH; then
   done
   if ! $ok; then
     log "Ultimi log backend:"
-    docker_compose logs --tail=40 be || true
-    die "Health check fallito dopo ${HEALTH_RETRIES} tentativi. Diagnostica: ${DOCKER[*]} compose ps && ${DOCKER[*]} compose logs --tail=80 be"
+    docker_compose logs --tail=40 server || true
+    die "Health check fallito dopo ${HEALTH_RETRIES} tentativi. Diagnostica: ${DOCKER[*]} compose ps && ${DOCKER[*]} compose logs --tail=80 server"
   fi
   log "Health OK: $(cat /tmp/palio-health.json)"
   rm -f /tmp/palio-health.json

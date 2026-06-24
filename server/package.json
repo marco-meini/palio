@@ -1,29 +1,40 @@
 {
-  "name": "palio-be",
+  "name": "palio-server",
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.js",
-    "dev:api": "node server/index.mjs",
-    "index-regolamento": "node tasks/index-regolamento.mjs"
+    "build": "tsc",
+    "build:watch": "tsc -w",
+    "start": "node --enable-source-maps ./dist/main.js",
+    "dev:api": "tsx ./src/main.ts",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "index-regolamento": "tsx ./src/tasks/index-regolamento.ts"
   },
   "overrides": {
     "protobufjs": "^7.5.5"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.81",
-    "@fastify/cookie": "^11.0.0",
-    "@fastify/cors": "^10.0.0",
-    "@fastify/oauth2": "^8.0.0",
     "@xenova/transformers": "^2.17.2",
     "ai": "^6.0.0",
     "cheerio": "^1.0.0",
-    "fastify": "^5.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
     "jose": "^6.0.0",
     "moment": "^2.29.4",
     "pdf-parse": "^1.1.1",
     "pg": "^8.13.1",
     "tesseract.js": "^7.0.0",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.9",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.0.14",
+    "@types/pg": "^8.15.4",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
   }
 }

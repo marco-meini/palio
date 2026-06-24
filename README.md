@@ -10,13 +10,13 @@ Chat locale per domande su edizioni, contrade, cavalli e risultati. Il backend u
 
 - Node.js 20+
 - Postgres locale configurato in `.skills/postgres/config.toml` (non versionato)
-- Config backend: `be/config/config.mjs` (non versionato; vedi sotto)
+- Config backend: `server/config/config.mjs` (non versionato; vedi sotto)
 
 ### Setup
 
 ```bash
 # Backend
-cd be && npm install
+cd server && npm install
 cp config/config.example.mjs config/config.mjs
 # Modifica config.mjs: anthropic.apiKey, db.* se serve
 
@@ -24,7 +24,7 @@ cp config/config.example.mjs config/config.mjs
 cd fe && npm install
 ```
 
-Opzioni in [`be/config/config.example.mjs`](be/config/config.example.mjs) (copia in `config.mjs`):
+Opzioni in [`server/config/config.example.mjs`](server/config/config.example.mjs) (copia in `config.mjs`):
 
 | Chiave | Default | Descrizione |
 |--------|---------|-------------|
@@ -68,7 +68,7 @@ Apri [http://localhost:4200](http://localhost:4200) e prova domande come:
 ### Test
 
 ```bash
-cd be && npm test          # parser + guardrail SQL read-only + auth
+cd server && npm test          # parser + guardrail SQL read-only + auth
 cd fe && npm run build     # build Angular
 ```
 
@@ -76,7 +76,7 @@ cd fe && npm run build     # build Angular
 
 Dimmelo può richiedere login Google prima di chiamare `POST /api/chat`. Il backend gestisce l’OAuth Authorization Code, emette un cookie di sessione **httpOnly** (JWT firmato con `jose`) e controlla che l’email sia presente in Postgres (`dimmelo_users`).
 
-In sviluppo locale, lascia `auth.enabled: false` in `be/config/config.mjs` per usare la chat senza configurare Google.
+In sviluppo locale, lascia `auth.enabled: false` in `server/config/config.mjs` per usare la chat senza configurare Google.
 
 #### Google Cloud Console
 
@@ -86,8 +86,8 @@ In sviluppo locale, lascia `auth.enabled: false` in `be/config/config.mjs` per u
    - Dev: `http://localhost:3001/api/auth/google/callback`
    - Prod: `https://<tuo-dominio>/api/auth/google/callback` (stesso host del proxy API)
 4. Credenziali OAuth (scegli una opzione):
-   - **File (consigliato):** copia il JSON da Google in `be/config/google-oauth.json` (non versionato; vedi `be/config/google-oauth.example.json`). Lascia `auth.google.clientId` / `clientSecret` vuoti in `config.mjs`.
-   - **Inline:** imposta `auth.google.clientId` e `clientSecret` in `be/config/config.mjs` (ha priorità sui campi del file).
+   - **File (consigliato):** copia il JSON da Google in `server/config/google-oauth.json` (non versionato; vedi `server/config/google-oauth.example.json`). Lascia `auth.google.clientId` / `clientSecret` vuoti in `config.mjs`.
+   - **Inline:** imposta `auth.google.clientId` e `clientSecret` in `server/config/config.mjs` (ha priorità sui campi del file).
 5. Genera un segreto sessione: `openssl rand -base64 48` → `auth.sessionSecret`.
 6. Applica la migration utenti e aggiungi account autorizzati (vedi sotto **Utenti Dimmelo**).
    - Deve essere l’**email principale del profilo Google** usato al login.
@@ -127,7 +127,7 @@ Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, conta
    ```
 3. Genera l’indice regolamento (una tantum, o dopo aggiornamento PDF):
    ```bash
-   cd be && npm run index-regolamento
+   cd server && npm run index-regolamento
    ```
 4. Avvia stack (FE su `127.0.0.1:8080`, BE solo rete interna):
    ```bash
@@ -204,7 +204,7 @@ Per ogni Palio lo scraper effettua **sei richieste**:
 Il crawl segue il link «Palio precedente» sulla pagina ingresso-canape.
 
 ```bash
-cd be
+cd server
 npm install
 node tasks/scrape-ilpalio.js \
   --start https://www.ilpalio.siena.it/5/Palio/202507020/ingresso-canape \
@@ -280,7 +280,7 @@ Valori applicati a **ogni** riga in `palio_partecipazioni` creata dal canape (in
 
 Se la pagina dirigenze non è disponibile o il parse fallisce, capitano/priore/barbaresco e mangini restano vuoti (warning su stderr), salvo `--fail-fast`.
 
-Test parser: `cd be && npm test` (fixture `test/fixtures/ordine-arrivo-202507020.html`, `test/fixtures/dirigenze-202507020.html`).
+Test parser: `cd server && npm test` (fixture `test/fixtures/ordine-arrivo-202507020.html`, `test/fixtures/dirigenze-202507020.html`).
 
 ### Validazione rapida
 
@@ -339,23 +339,23 @@ Esempio: Oca `ordine_arrivo=1`, Bruco `2`, Selva `3`, Valdimontone `4`; le altre
 
 ## Dimmelo (AI + database)
 
-Web app in [`fe/`](fe/) per interrogare il database in linguaggio naturale. Il backend ([`be/server/`](be/server/)) usa **Claude** (Anthropic) con tool che invocano la skill Postgres (`scripts/postgres`) in **sola lettura**.
+Web app in [`fe/`](fe/) per interrogare il database in linguaggio naturale. Il backend ([`server/src/`](server/src/)) usa **Claude** (Anthropic) con tool che invocano la skill Postgres (`scripts/postgres`) in **sola lettura**.
 
 ### Prerequisiti
 
 - Database Palio popolato e profilo in `.skills/postgres/config.toml`
 - Skill Postgres installata: `~/.agents/skills/postgres/scripts/postgres`
-- `be/config/config.mjs` con `anthropic.apiKey` (copia da [`be/config/config.example.mjs`](be/config/config.example.mjs))
+- `server/config/config.mjs` con `anthropic.apiKey` (copia da [`server/config/config.example.mjs`](server/config/config.example.mjs))
 
 ### Avvio in sviluppo
 
 ```bash
 # dalla root del repo
-cp be/config/config.example.mjs be/config/config.mjs
-# imposta anthropic.apiKey in be/config/config.mjs
+cp server/config/config.example.mjs server/config/config.mjs
+# imposta anthropic.apiKey in server/config/config.mjs
 
 npm install              # concurrently (root)
-cd be && npm install
+cd server && npm install
 cd ../fe && npm install
 
 # terminale unico (API :3001 + Angular :4200)
@@ -369,17 +369,17 @@ Oppure due terminali: `npm run dev:api` e `npm run dev:fe`.
 
 ### Regolamento (RAG)
 
-Dimmelo può rispondere anche su **regole e regolamento ufficiale** tramite il tool `search_regolamento`, che interroga un indice vettoriale generato dal PDF in [`be/doc/Regolamento per il Palio.pdf`](be/doc/Regolamento%20per%20il%20Palio.pdf).
+Dimmelo può rispondere anche su **regole e regolamento ufficiale** tramite il tool `search_regolamento`, che interroga un indice vettoriale generato dal PDF in [`server/doc/Regolamento per il Palio.pdf`](server/doc/Regolamento%20per%20il%20Palio.pdf).
 
 Dopo aver aggiornato il PDF (o al primo setup):
 
 ```bash
-cd be && npm run index-regolamento
+cd server && npm run index-regolamento
 ```
 
-Lo script estrae il testo (OCR se il PDF è scansionato; richiede **poppler**: `brew install poppler`), calcola gli embedding e scrive `be/data/regolamento-index.json`. Il file va versionato o rigenerato in deploy.
+Lo script estrae il testo (OCR se il PDF è scansionato; richiede **poppler**: `brew install poppler`), calcola gli embedding e scrive `server/data/regolamento-index.json`. Il file va versionato o rigenerato in deploy.
 
-Opzioni in `be/config/config.mjs` → `regolamento.indexPath`, `regolamento.topK`, `regolamento.minScore`.
+Opzioni in `server/config/config.mjs` → `regolamento.indexPath`, `regolamento.topK`, `regolamento.minScore`.
 
 ### Stack
 

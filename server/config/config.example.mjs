@@ -8,7 +8,7 @@ const projectRoot = path.resolve(__dirname, '../..');
 /**
  * Copia questo file in `config.mjs` (non versionato) e personalizza i valori.
  *
- *   cp be/config/config.example.mjs be/config/config.mjs
+ *   cp server/config/config.example.mjs server/config/config.mjs
  */
 export default {
   /**
@@ -56,7 +56,7 @@ export default {
     minScore: 0.35,
   },
 
-  /** API HTTP (be/server) */
+  /** API HTTP (server) */
   server: {
     port: 3001,
     corsOrigin: 'http://localhost:4200',
@@ -74,7 +74,7 @@ export default {
     sessionSecret: '',
     sessionTtlSeconds: 604800,
     google: {
-      /** Opzionale: lascia vuoto e usa be/config/google-oauth.json (vedi google-oauth.example.json) */
+      /** Opzionale: lascia vuoto e usa server/config/google-oauth.json (vedi google-oauth.example.json) */
       clientId: '',
       clientSecret: '',
     },

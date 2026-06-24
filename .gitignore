@@ -1,8 +1,8 @@
 node_modules
 fe/node_modules
-be/node_modules
+server/node_modules
 
-be/config/config.mjs
-be/config/google-oauth.json
+server/config/config.mjs
+server/config/google-oauth.json
 .env.production
 .skills/postgres/config.toml

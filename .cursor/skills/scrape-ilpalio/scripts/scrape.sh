@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Wrapper for full ilpalio scraping. Run from repo root or be/.
+# Wrapper for full ilpalio scraping. Run from repo root or server/.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../../.." && pwd)"
-BE="$ROOT/be"
+SERVER="$ROOT/server"
 DELAY_MS=800
 MAX_RANGE=100
 
@@ -55,7 +55,7 @@ if [[ -n "$PALIO" ]]; then
     echo "Use either --palio or --from/--to/--end-code, not both." >&2
     exit 1
   fi
-  exec node "$BE/tasks/scrape-ilpalio.js" --source-code "$PALIO" "${ARGS[@]}"
+  exec npm exec --prefix "$SERVER" tsx src/tasks/scrape-ilpalio.ts --source-code "$PALIO" "${ARGS[@]}"
 fi
 
 if [[ -n "$FROM" || -n "$TO" || -n "$END_CODE" ]]; then
@@ -65,7 +65,7 @@ if [[ -n "$FROM" || -n "$TO" || -n "$END_CODE" ]]; then
     exit 1
   fi
   ARGS+=(--source-code "$END_CODE" --until-date "$FROM" --max "${MAX:-$MAX_RANGE}")
-  exec node "$BE/tasks/scrape-ilpalio.js" "${ARGS[@]}"
+  exec npm exec --prefix "$SERVER" tsx src/tasks/scrape-ilpalio.ts "${ARGS[@]}"
 fi
 
 usage >&2

@@ -2,10 +2,11 @@
   "name": "palio",
   "private": true,
   "scripts": {
-    "dev:api": "npm run dev:api --prefix be",
+    "dev:api": "npm run dev:api --prefix server",
     "dev:fe": "npm run start --prefix fe",
     "dev": "concurrently -n api,fe -c blue,green \"npm run dev:api\" \"npm run dev:fe\"",
-    "test:be": "npm test --prefix be"
+    "test:server": "npm test --prefix server",
+    "test:be": "npm test --prefix server"
   },
   "devDependencies": {
     "concurrently": "^9.2.0"

@@ -3,20 +3,20 @@ name: scrape-ilpalio
 description: >-
   Runs full Palio imports from ilpalio.siena.it (six pages per Palio: sommario,
   ingresso-canape, dirigenze, ordine-estrazione, assegnazione-cavalli,
-  ordine-arrivo) via be/tasks/scrape-ilpalio.js. Use when the user asks to
+  ordine-arrivo) via server/src/tasks/scrape-ilpalio.ts. Use when the user asks to
   scrape, import, sync, or backfill Palio data; run a single Palio by source
   code; crawl a date range backwards; or refresh data from ilpalio.siena.it.
 ---
 
 # Scrape ilpalio.siena.it
 
-Import complete Palio records into Postgres using `be/tasks/scrape-ilpalio.js`. Each Palio triggers **six HTTP requests** then a DB transaction.
+Import complete Palio records into Postgres using `server/src/tasks/scrape-ilpalio.ts`. Each Palio triggers **six HTTP requests** then a DB transaction.
 
 ## Prerequisites
 
 1. **Node deps** (from repo root):
    ```bash
-   cd be && npm install
+   cd server && npm install
    ```
 2. **Schema**: apply [`db/migrations/prerelease.sql`](../../../db/migrations/prerelease.sql) (see root README).
 3. **Database**: `.skills/postgres/config.toml` profile `local`, or `DATABASE_URL` in the environment.
@@ -31,15 +31,15 @@ chmod +x .cursor/skills/scrape-ilpalio/scripts/scrape.sh
 By **source code** (default `--max 1`):
 
 ```bash
-cd be
-node tasks/scrape-ilpalio.js --source-code 202507020
+cd server
+npx tsx src/tasks/scrape-ilpalio.js --source-code 202507020
 ```
 
 By **URL** (normalize to ingresso-canape if needed):
 
 ```bash
-cd be
-node tasks/scrape-ilpalio.js \
+cd server
+npx tsx src/tasks/scrape-ilpalio.js \
   --start https://www.ilpalio.siena.it/5/Palio/202507020/ingresso-canape \
   --max 1
 ```
@@ -59,8 +59,8 @@ Crawl starts at the **newest** Palio in the range (`--start` or `--source-code` 
 Example: from August 2025 back through July 2025 (stop before 2025-07-01):
 
 ```bash
-cd be
-node tasks/scrape-ilpalio.js \
+cd server
+npx tsx src/tasks/scrape-ilpalio.js \
   --start https://www.ilpalio.siena.it/5/Palio/202508160/ingresso-canape \
   --until-date 2025-07-01 \
   --max 100 \
@@ -70,8 +70,8 @@ node tasks/scrape-ilpalio.js \
 Same with source code:
 
 ```bash
-cd be
-node tasks/scrape-ilpalio.js \
+cd server
+npx tsx src/tasks/scrape-ilpalio.js \
   --source-code 202508160 \
   --until-date 2025-07-01 \
   --max 100 \
@@ -98,7 +98,7 @@ Pick `--end-code` / start URL from the most recent Palio in the range on [ilpali
 | `--delay-ms MS` | Pause between requests (default **800**; keep ≥500 to be polite) |
 | `--fail-fast` | Abort on first fetch/parse/import error |
 
-Help: `node tasks/scrape-ilpalio.js --help`
+Help: `npx tsx src/tasks/scrape-ilpalio.js --help`
 
 ## Operational guidance
 
@@ -142,7 +142,7 @@ ORDER BY pp.canape NULLS LAST;
 
 ## Agent workflow
 
-1. Confirm DB migration and `cd be && npm install`.
+1. Confirm DB migration and `cd server && npm install`.
 2. Choose single-Palio (`--source-code`) vs range (`--start`/`--source-code` + `--until-date` + `--max`).
 3. Run scraper; inspect stderr and final JSON.
 4. Run validation SQL; report counts and any `errors` array entries.
