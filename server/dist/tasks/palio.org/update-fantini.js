@@ -1,7 +1,7 @@
 "use strict";
 import * as cheerio from 'cheerio';
 import { HttpsRequests } from '../../lib/https-requests.js';
-import { getConfig, initConfig } from '../../config.js';
+import { initConfig } from '../../config.js';
 import { resolveApiPgConfig } from '../../lib/db-config.js';
 import { Model } from '../../model/pg-models.js';
 const PAGES = [
@@ -12,7 +12,7 @@ const PAGES = [
 class UpdaeFantini {
     __model;
     constructor() {
-        this.__model = new Model(resolveApiPgConfig(getConfig()));
+        this.__model = new Model(resolveApiPgConfig());
     }
     async exec() {
         for (const page of PAGES) {

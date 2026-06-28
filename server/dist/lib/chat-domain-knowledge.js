@@ -77,6 +77,9 @@ export const DOMAIN_STRATEGY = `Strategia (risparmio token — segui nell'ordine
    - last_win: ultima vittoria di una contrada (param contrada)
    - palio_participants: partecipanti e dirigenze di un palio (param source_code O data_palio)
    - palii_by_person: palii/ruoli di una persona per nome (param person; opz. role, contrada, year_from, year_to)
+   - contrada_win_totals: classifica vittorie per contrada (opz. year_from, year_to, limit)
+   - wins_by_fantino: palii vinti da un fantino (param person; opz. year_from, year_to)
+   - wins_by_horse: palii vinti con un cavallo (param horse; opz. year_from, year_to)
 2. Domande su **capitano, priore, barbaresco, mangini, fantino** per nome → preferisci palii_by_person; altrimenti SQL con JOIN obbligatorio (vedi relazioni FK).
 3. Altrimenti usa **una sola** run_readonly_sql con SELECT mirato, JOIN necessari e LIMIT adeguato.
 4. Non usare get_schema né search_schema salvo se manca una colonna/tabella indispensabile.`;

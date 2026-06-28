@@ -6,6 +6,9 @@ export const RECIPE_NAMES = [
     'last_win',
     'palio_participants',
     'palii_by_person',
+    'contrada_win_totals',
+    'wins_by_fantino',
+    'wins_by_horse',
 ];
 /** @deprecated Use RECIPE_NAMES — alias per compatibilità */
 export const RECIPE_IDS = RECIPE_NAMES;
@@ -74,6 +77,17 @@ function personNamePattern(params) {
     const raw = params.person ?? params.nome ?? params.name;
     const name = assertString(raw, 'person');
     return sqlQuote(`%${name}%`);
+}
+function horseNamePattern(params) {
+    const raw = params.horse ?? params.cavallo ?? params.horse_name;
+    const name = assertString(raw, 'horse');
+    return sqlQuote(`%${name}%`);
+}
+function optionalLimitClause(params) {
+    if (params.limit == null || params.limit === '') {
+        return '';
+    }
+    return `\nLIMIT ${assertInt(params.limit, 'limit')}`;
 }
 function personRole(params) {
     if (params.role == null || params.role === '') {
@@ -299,6 +313,77 @@ JOIN mangini m ON m.id = ppm.mangini_id`, `m.nome ILIKE ${pattern}`, params));
             return `${branches.join('\nUNION ALL\n')}\nORDER BY data_palio, contrada, ruolo`;
         },
     },
+    contrada_win_totals: {
+        description: 'Classifica vittorie per contrada (totale o per intervallo anni)',
+        validate(params) {
+            if (params.limit != null && params.limit !== '') {
+                assertInt(params.limit, 'limit');
+            }
+        },
+        buildSql(params) {
+            return `
+SELECT
+  c.name AS contrada,
+  COUNT(*)::int AS vittorie
+FROM palio_partecipazioni pp
+JOIN palii p ON p.id = pp.palio_id
+JOIN contrade c ON c.id = pp.contrada_id
+WHERE pp.vincitrice${yearFilters(params)}
+GROUP BY c.id, c.name
+ORDER BY vittorie DESC, c.name ASC${optionalLimitClause(params)}
+`.trim();
+        },
+    },
+    wins_by_fantino: {
+        description: 'Palii vinti da un fantino (nome o soprannome), opz. intervallo anni',
+        validate(params) {
+            personNamePattern(params);
+        },
+        buildSql(params) {
+            const pattern = personNamePattern(params);
+            return `
+SELECT
+  p.data_palio,
+  p.source_code,
+  c.name AS contrada,
+  ${FANTINO_LABEL_SQL} AS fantino,
+  f.nome AS fantino_nome,
+  f.soprannome AS fantino_soprannome
+FROM palii p
+JOIN palio_partecipazioni pp ON pp.palio_id = p.id
+JOIN contrade c ON c.id = pp.contrada_id
+JOIN fantini f ON f.id = pp.fantino_id
+WHERE pp.vincitrice
+  AND (f.nome ILIKE ${pattern} OR f.soprannome ILIKE ${pattern})${yearFilters(params)}
+ORDER BY p.data_palio DESC, p.id DESC
+`.trim();
+        },
+    },
+    wins_by_horse: {
+        description: 'Palii vinti con un cavallo (nome), opz. intervallo anni',
+        validate(params) {
+            horseNamePattern(params);
+        },
+        buildSql(params) {
+            const pattern = horseNamePattern(params);
+            return `
+SELECT
+  p.data_palio,
+  p.source_code,
+  c.name AS contrada,
+  ca.nome AS cavallo,
+  ${FANTINO_LABEL_SQL} AS fantino
+FROM palii p
+JOIN palio_partecipazioni pp ON pp.palio_id = p.id
+JOIN contrade c ON c.id = pp.contrada_id
+JOIN cavalli ca ON ca.id = pp.cavallo_id
+LEFT JOIN fantini f ON f.id = pp.fantino_id
+WHERE pp.vincitrice
+  AND ca.nome ILIKE ${pattern}${yearFilters(params)}
+ORDER BY p.data_palio DESC, p.id DESC
+`.trim();
+        },
+    },
 };
 /**
  * Normalizza alias snake_case dal tool schema verso nomi interni.
@@ -316,6 +401,9 @@ function normalizeParams(params) {
     }
     if (out.name != null && out.person == null) {
         out.person = out.name;
+    }
+    if (out.cavallo != null && out.horse == null) {
+        out.horse = out.cavallo;
     }
     return out;
 }

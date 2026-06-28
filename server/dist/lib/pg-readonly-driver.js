@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { toMarkdownTable } from './compact-tool-result.js';
+export const DEFAULT_READONLY_QUERY_TIMEOUT_MS = 30_000;
 export function formatQueryResultAsCli(result) {
     const count = result.rowCount ?? result.rows.length;
     if (!count) {
@@ -11,8 +12,13 @@ export function formatQueryResultAsCli(result) {
     return `Statement 1 (${count} rows)\n${md}`;
 }
 export async function pgProfileTest(pg) {
-    await pg.query('SELECT 1 AS ok');
-    const via = process.env.DATABASE_URL ? 'DATABASE_URL' : 'pg pool';
+    const runner = typeof pg.queryReadOnly === 'function' ? pg.queryReadOnly.bind(pg) : pg.query.bind(pg);
+    await runner('SELECT 1 AS ok');
+    const via = process.env.CHAT_DATABASE_URL
+        ? 'CHAT_DATABASE_URL'
+        : process.env.DATABASE_URL
+            ? 'DATABASE_URL'
+            : 'pg pool (chat_ro)';
     return `Connection OK (${via})`;
 }
 export async function pgListTables(pg) {
@@ -75,8 +81,11 @@ export async function pgFindObjects(pg, pattern, types) {
     }
     return lines.join('\n') || '(nessun match)';
 }
-export async function pgRunQuery(pg, sql) {
-    const result = await pg.query(sql);
+export async function pgRunQuery(pg, sql, options = {}) {
+    const timeoutMs = options.timeoutMs ?? DEFAULT_READONLY_QUERY_TIMEOUT_MS;
+    const result = typeof pg.queryReadOnly === 'function'
+        ? await pg.queryReadOnly(sql, { timeoutMs })
+        : await pg.query(sql);
     return formatQueryResultAsCli(result);
 }
 //# sourceMappingURL=pg-readonly-driver.js.map

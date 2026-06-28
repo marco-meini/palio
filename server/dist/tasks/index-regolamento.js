@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getConfig, initConfig } from '../config.js';
+import { initConfig } from '../config.js';
 import { resolveApiPgConfig } from '../lib/db-config.js';
 import { EMBEDDING_MODEL, chunkRegolamentoText, embedText, } from '../lib/regolamento-embeddings.js';
 import { extractTextFromPdfFile } from '../lib/regolamento-pdf-text.js';
@@ -36,7 +36,7 @@ async function main() {
         }
     }
     await initConfig();
-    const pg = new PgClientManager(resolveApiPgConfig(getConfig()));
+    const pg = new PgClientManager(resolveApiPgConfig());
     try {
         const written = await replaceRegolamentoChunks(pg, {
             source: pdfPath,

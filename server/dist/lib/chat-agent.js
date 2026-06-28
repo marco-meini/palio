@@ -110,6 +110,8 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd, pg, }) {
                     source_code: z.string().optional(),
                     data_palio: z.string().optional(),
                     person: z.string().optional(),
+                    horse: z.string().optional(),
+                    limit: z.number().int().positive().optional(),
                     role: z
                         .enum(['capitano', 'priore', 'barbaresco', 'fantino', 'mangini', 'any'])
                         .optional(),

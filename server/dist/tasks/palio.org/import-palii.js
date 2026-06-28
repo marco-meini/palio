@@ -6,7 +6,7 @@
 import { HttpsRequests } from '../../lib/https-requests.js';
 import * as cheerio from 'cheerio';
 import moment from 'moment';
-import { getConfig, initConfig } from '../../config.js';
+import { initConfig } from '../../config.js';
 import { resolveApiPgConfig } from '../../lib/db-config.js';
 import { Model } from '../../model/pg-models.js';
 moment.locale("it-IT");
@@ -34,7 +34,7 @@ const CONTRADE = {
 // };
 class ImportPalii {
     constructor() {
-        this.__model = new Model(resolveApiPgConfig(getConfig()));
+        this.__model = new Model(resolveApiPgConfig());
     }
     async __processPalio(row) {
         try {
