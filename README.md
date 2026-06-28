@@ -21,7 +21,7 @@ cp config/config.example.mjs config/config.mjs
 # Modifica config.mjs: anthropic.apiKey, db.* se serve
 
 # Frontend
-cd fe && npm install
+cd client && npm install
 ```
 
 Opzioni in [`server/config/config.example.mjs`](server/config/config.example.mjs) (copia in `config.mjs`):
@@ -50,7 +50,7 @@ npm run dev
 
 # Oppure separatamente:
 npm run dev:api   # http://localhost:3001
-npm run dev:fe    # http://localhost:4200 (proxy /api → 3001)
+npm run dev:client    # http://localhost:4200 (proxy /api → 3001)
 ```
 
 Verifica API:
@@ -69,7 +69,7 @@ Apri [http://localhost:4200](http://localhost:4200) e prova domande come:
 
 ```bash
 cd server && npm test          # parser + guardrail SQL read-only + auth
-cd fe && npm run build     # build Angular
+cd client && npm run build     # build Angular
 ```
 
 ### Autenticazione Google (OAuth)
@@ -339,7 +339,7 @@ Esempio: Oca `ordine_arrivo=1`, Bruco `2`, Selva `3`, Valdimontone `4`; le altre
 
 ## Dimmelo (AI + database)
 
-Web app in [`fe/`](fe/) per interrogare il database in linguaggio naturale. Il backend ([`server/src/`](server/src/)) usa **Claude** (Anthropic) con tool che invocano la skill Postgres (`scripts/postgres`) in **sola lettura**.
+Web app in [`client/`](client/) per interrogare il database in linguaggio naturale. Il backend ([`server/src/`](server/src/)) usa **Claude** (Anthropic) con tool che invocano la skill Postgres (`scripts/postgres`) in **sola lettura**.
 
 ### Prerequisiti
 
@@ -356,13 +356,13 @@ cp server/config/config.example.mjs server/config/config.mjs
 
 npm install              # concurrently (root)
 cd server && npm install
-cd ../fe && npm install
+cd ../client && npm install
 
 # terminale unico (API :3001 + Angular :4200)
 npm run dev
 ```
 
-Oppure due terminali: `npm run dev:api` e `npm run dev:fe`.
+Oppure due terminali: `npm run dev:api` e `npm run dev:client`.
 
 - UI: http://localhost:4200  
 - Health: http://localhost:3001/api/health  
@@ -390,7 +390,7 @@ Opzioni in `server/config/config.mjs` → `regolamento.indexPath`, `regolamento.
 | DB | Postgres skill CLI (`query run`, `schema inspect`, `query find`) |
 | Regolamento | Embedding locali (`@xenova/transformers`), indice JSON, OCR (`tesseract.js` + `pdftoppm`) |
 
-Per aggiungere componenti [Spartan-ng](https://www.spartan.ng) in seguito: `cd fe && npx @spartan-ng/cli init` (richiede rete/registry).
+Per aggiungere componenti [Spartan-ng](https://www.spartan.ng) in seguito: `cd client && npx @spartan-ng/cli init` (richiede rete/registry).
 
 ### Sicurezza
 

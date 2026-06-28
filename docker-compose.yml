@@ -9,9 +9,9 @@ services:
       - postgres
       - dimmelo
 
-  fe:
+  client:
     build:
-      context: ./fe
+      context: ./client
     depends_on:
       - server
     ports:

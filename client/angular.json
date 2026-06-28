@@ -7,7 +7,7 @@
   },
   "newProjectRoot": "projects",
   "projects": {
-    "fe": {
+    "client": {
       "projectType": "application",
       "schematics": {},
       "root": "",
@@ -60,10 +60,10 @@
           },
           "configurations": {
             "production": {
-              "buildTarget": "fe:build:production"
+              "buildTarget": "client:build:production"
             },
             "development": {
-              "buildTarget": "fe:build:development"
+              "buildTarget": "client:build:development"
             }
           },
           "defaultConfiguration": "development"
