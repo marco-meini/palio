@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+  buildChatSystemPrompt,
+  DOMAIN_FK_JOINS,
+  DOMAIN_SCHEMA,
+} from '../src/lib/chat-domain-knowledge.js';
+
+test('buildChatSystemPrompt — documenta anagrafiche dirigenze e JOIN obbligatori', () => {
+  const prompt = buildChatSystemPrompt();
+
+  assert.match(prompt, /capitani\(id, nome\)/);
+  assert.match(prompt, /priori\(id, nome\)/);
+  assert.match(prompt, /barbareschi\(id, nome\)/);
+  assert.match(prompt, /capitano_id → capitani\.id/);
+  assert.match(prompt, /JOIN capitani cap ON cap\.id = pp\.capitano_id/);
+  assert.match(prompt, /palii_by_person/);
+  assert.match(prompt, /Mai.*cercare nomi di persone/i);
+});
+
+test('DOMAIN_SCHEMA e DOMAIN_FK_JOINS — coerenti con palio_partecipazione_mangini', () => {
+  assert.match(DOMAIN_SCHEMA, /palio_partecipazione_mangini/);
+  assert.match(DOMAIN_FK_JOINS, /mangini \(N:N\)/);
+});

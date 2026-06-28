@@ -44,6 +44,7 @@ export class ChatController extends Abstract_Controller {
         try {
             const result = await runChatAgent({
                 messages,
+                pg: this.env.pgConnection,
                 onToolEvent: (event) => writeSse(res, event.type, { name: event.name }),
             });
             let sentText = false;

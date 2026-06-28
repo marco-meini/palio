@@ -1,6 +1,8 @@
 // @ts-nocheck
 import { toMarkdownTable } from './compact-tool-result.js';
 
+export const DEFAULT_READONLY_QUERY_TIMEOUT_MS = 30_000;
+
 export function formatQueryResultAsCli(result) {
   const count = result.rowCount ?? result.rows.length;
   if (!count) {
@@ -14,8 +16,13 @@ export function formatQueryResultAsCli(result) {
 }
 
 export async function pgProfileTest(pg) {
-  await pg.query('SELECT 1 AS ok');
-  const via = process.env.DATABASE_URL ? 'DATABASE_URL' : 'pg pool';
+  const runner = typeof pg.queryReadOnly === 'function' ? pg.queryReadOnly.bind(pg) : pg.query.bind(pg);
+  await runner('SELECT 1 AS ok');
+  const via = process.env.CHAT_DATABASE_URL
+    ? 'CHAT_DATABASE_URL'
+    : process.env.DATABASE_URL
+      ? 'DATABASE_URL'
+      : 'pg pool (chat_ro)';
   return `Connection OK (${via})`;
 }
 
@@ -40,7 +47,7 @@ export async function pgSchemaInspect(pg) {
     ORDER BY c.table_name, c.ordinal_position
   `);
 
-    const byTable: Record<string, string[]> = {};
+  const byTable: Record<string, string[]> = {};
   for (const row of result.rows) {
     const t = String(row.table_name);
     if (!byTable[t]) byTable[t] = [];
@@ -58,7 +65,7 @@ export async function pgFindObjects(pg, pattern, types) {
   const wantTables = !types || types.includes('table');
   const wantColumns = !types || types.includes('column');
 
-    const lines: string[] = [];
+  const lines: string[] = [];
 
   if (wantTables) {
     const t = await pg.query(
@@ -95,7 +102,11 @@ export async function pgFindObjects(pg, pattern, types) {
   return lines.join('\n') || '(nessun match)';
 }
 
-export async function pgRunQuery(pg, sql) {
-  const result = await pg.query(sql);
+export async function pgRunQuery(pg, sql, options = {}) {
+  const timeoutMs = options.timeoutMs ?? DEFAULT_READONLY_QUERY_TIMEOUT_MS;
+  const result =
+    typeof pg.queryReadOnly === 'function'
+      ? await pg.queryReadOnly(sql, { timeoutMs })
+      : await pg.query(sql);
   return formatQueryResultAsCli(result);
 }

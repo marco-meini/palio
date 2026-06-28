@@ -1,8 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { getConfig } from '../config.js';
-import { serverRoot } from '../paths.js';
+import type { PgClientManager } from './pg-client-manager.js';
 import { cosineSimilarity, embedText } from './regolamento-embeddings.js';
+import { searchRegolamentoChunks } from './regolamento-store.js';
 
 export interface RegolamentoChunk {
   id: string;
@@ -12,56 +11,30 @@ export interface RegolamentoChunk {
   embedding: number[];
 }
 
-export interface RegolamentoIndex {
-  version: number;
-  model: string;
-  source: string;
-  createdAt: string;
-  chunks: RegolamentoChunk[];
+export interface RegolamentoSearchHit {
+  id: string;
+  text: string;
+  section: string | null;
+  page: number | null;
+  score: number;
 }
 
-let cachedIndex: RegolamentoIndex | null = null;
-
-const defaultIndexPath = path.join(serverRoot, 'data/regolamento-index.json');
-
-export function resolveIndexPath() {
-  const configured = getConfig().regolamento?.indexPath;
-  if (!configured) return defaultIndexPath;
-  return path.isAbsolute(configured) ? configured : path.resolve(serverRoot, configured);
-}
-
-export function loadIndex(indexPath = resolveIndexPath()): RegolamentoIndex {
-  if (cachedIndex && indexPath === resolveIndexPath()) {
-    return cachedIndex;
-  }
-  if (!fs.existsSync(indexPath)) {
-    throw new Error(
-      `Indice regolamento non trovato (${indexPath}). Esegui: cd server && npm run index-regolamento`,
-    );
-  }
-  const raw = fs.readFileSync(indexPath, 'utf8');
-  const parsed = JSON.parse(raw) as RegolamentoIndex;
-  if (!Array.isArray(parsed.chunks) || parsed.chunks.length === 0) {
-    throw new Error(`Indice regolamento vuoto o non valido (${indexPath})`);
-  }
-  if (indexPath === resolveIndexPath()) {
-    cachedIndex = parsed;
-  }
-  return parsed;
-}
-
+/** Usato nei test; la ricerca runtime passa da pgvector. */
 export function rankChunks(
   chunks: RegolamentoChunk[],
   queryEmbedding: number[],
   opts: { topK?: number; minScore?: number } = {},
-) {
+): RegolamentoSearchHit[] {
   const cfg = getConfig().regolamento;
   const topK = opts.topK ?? cfg?.topK ?? 5;
   const minScore = opts.minScore ?? cfg?.minScore ?? 0.35;
 
   return chunks
     .map((chunk) => ({
-      ...chunk,
+      id: chunk.id,
+      text: chunk.text,
+      section: chunk.section,
+      page: chunk.page,
       score: cosineSimilarity(queryEmbedding, chunk.embedding),
     }))
     .filter((item) => item.score >= minScore)
@@ -69,7 +42,7 @@ export function rankChunks(
     .slice(0, topK);
 }
 
-export function formatSearchResults(hits: ReturnType<typeof rankChunks>) {
+export function formatSearchResults(hits: RegolamentoSearchHit[]) {
   if (hits.length === 0) {
     return 'Nessun passaggio rilevante trovato nel Regolamento per questa query.';
   }
@@ -90,19 +63,26 @@ export function formatSearchResults(hits: ReturnType<typeof rankChunks>) {
 
 export async function searchRegolamento(
   query: string,
-  opts: { topK?: number; minScore?: number; indexPath?: string } = {},
+  opts: { topK?: number; minScore?: number } = {},
+  pg?: PgClientManager | null,
 ) {
   const trimmed = String(query || '').trim();
   if (!trimmed) {
     throw new Error('Query regolamento vuota');
   }
 
-  const index = loadIndex(opts.indexPath);
-  const queryEmbedding = await embedText(trimmed, 'query');
-  const hits = rankChunks(index.chunks, queryEmbedding as number[], opts);
-  return formatSearchResults(hits);
-}
+  if (!pg) {
+    throw new Error(
+      'Connessione Postgres non disponibile per search_regolamento. ' +
+        'Avvia l\'API con DATABASE_URL o config.db.',
+    );
+  }
 
-export function resetIndexCache() {
-  cachedIndex = null;
+  const cfg = getConfig().regolamento;
+  const queryEmbedding = (await embedText(trimmed, 'query')) as number[];
+  const hits = await searchRegolamentoChunks(pg, queryEmbedding, {
+    topK: opts.topK ?? cfg?.topK ?? 5,
+    minScore: opts.minScore ?? cfg?.minScore ?? 0.35,
+  });
+  return formatSearchResults(hits);
 }

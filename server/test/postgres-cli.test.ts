@@ -16,6 +16,20 @@ test('assertReadOnlySql — consente SELECT, WITH, EXPLAIN', () => {
   );
 });
 
+test('assertReadOnlySql — rifiuta statement multipli', () => {
+  assert.throws(
+    () => assertReadOnlySql('SELECT 1; SELECT 2'),
+    /una sola istruzione/i,
+  );
+});
+
+test('assertReadOnlySql — rifiuta COMMIT', () => {
+  assert.throws(
+    () => assertReadOnlySql('SELECT 1; COMMIT; DROP TABLE palii'),
+    /(una sola istruzione|non consentita)/i,
+  );
+});
+
 test('assertReadOnlySql — rifiuta DML/DDL e migration', () => {
   const forbidden = [
     'DELETE FROM palii',

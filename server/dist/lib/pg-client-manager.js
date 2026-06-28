@@ -9,6 +9,15 @@ export class PgClientManager {
             connectionTimeoutMillis: config.connectionTimeoutMillis ?? 5000,
         });
     }
+    async withClient(fn) {
+        const client = await this.__pool.connect();
+        try {
+            return await fn(client);
+        }
+        finally {
+            client.release();
+        }
+    }
     async startTransaction() {
         let transactionClient = null;
         try {

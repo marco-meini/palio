@@ -2,7 +2,7 @@
 
 import * as cheerio from 'cheerio';
 import { HttpsRequests } from '../../lib/https-requests.js';
-import { getConfig, initConfig } from '../../config.js';
+import { initConfig } from '../../config.js';
 import { resolveApiPgConfig } from '../../lib/db-config.js';
 import { Model } from '../../model/pg-models.js';
 
@@ -16,7 +16,7 @@ class UpdaeFantini {
   __model: Model;
 
   constructor() {
-    this.__model = new Model(resolveApiPgConfig(getConfig()) as import('pg').PoolConfig);
+    this.__model = new Model(resolveApiPgConfig() as import('pg').PoolConfig);
   }
 
   async exec() {

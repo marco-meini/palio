@@ -7,7 +7,6 @@ RUN npm ci --omit=dev
 
 COPY dist/ dist/
 COPY config/config.example.mjs config/
-COPY data/regolamento-index.json data/
 
 ENV NODE_ENV=production
 

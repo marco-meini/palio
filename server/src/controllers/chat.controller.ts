@@ -39,7 +39,7 @@ export class ChatController extends Abstract_Controller {
 
     if (!this.env.config.anthropic.apiKey) {
       res.status(503).send({
-        error: 'anthropic.apiKey non configurata in server/config/config.js',
+        error: 'ANTHROPIC_API_KEY non configurata — impostala in .env',
       });
       return;
     }
@@ -57,6 +57,7 @@ export class ChatController extends Abstract_Controller {
     try {
       const result = await runChatAgent({
         messages,
+        pg: this.env.pgConnection,
         onToolEvent: (event) => writeSse(res, event.type, { name: event.name }),
       });
 

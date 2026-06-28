@@ -1,7 +1,16 @@
 ## WIP
 
+### regolamento_chunks.sql
+- `regolamento_chunks` — chunk testo regolamento + embedding `vector(384)` (modello e5-small)
+- Richiede estensione `vector` ([`db/bootstrap/03_pgvector.sql`](../bootstrap/03_pgvector.sql) come superuser)
+- Popolamento: `cd server && npm run index-regolamento`
+
 ### dimmelo_users.sql
 - `dimmelo_users` — email (unique, lowercase), `display_name`, `created_at`; seed Marco
+
+### palio_chat_ro.sql
+- Ruolo `palio_chat_ro` (LOGIN) con `SELECT` sulle tabelle Palio per chat e MCP sidecar
+- Configurare `CHAT_DATABASE_URL` o profile `chat_ro` in `.skills/postgres/config.toml` (password via `CHAT_DB_PASSWORD` / `POSTGRES_PASSWORD`)
 
 ### prerelease.sql
 - `palii`, anagrafiche, `palio_partecipazioni` con colonna **`canape`** (1–9 posto canape, **10** = rincorsa `R`)

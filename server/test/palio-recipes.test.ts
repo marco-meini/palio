@@ -121,6 +121,24 @@ test('buildRecipeSql — SQL read-only con parametri validati', () => {
   assert.match(participants, /pp\.estratta/);
   assert.match(participants, /estratta_da/);
   assert.match(participants, /AS fantino/);
+  assert.match(participants, /JOIN capitani cap ON cap\.id = pp\.capitano_id/);
+  assert.match(participants, /AS capitano/);
+
+  const byPerson = buildRecipeSql('palii_by_person', {
+    person: 'Zalaffi',
+    role: 'capitano',
+    contrada: 'Chiocciola',
+  });
+  assert.match(byPerson, /JOIN capitani cap ON cap\.id = pp\.capitano_id/);
+  assert.match(byPerson, /cap\.nome ILIKE '%Zalaffi%'/);
+  assert.match(byPerson, /c\.name ILIKE 'Chiocciola'/);
+  assert.match(byPerson, /'capitano' AS ruolo/);
+  assert.doesNotMatch(byPerson, /UNION ALL/);
+
+  const byPersonAny = buildRecipeSql('palii_by_person', { person: 'Rossi' });
+  assert.match(byPersonAny, /UNION ALL/);
+  assert.match(byPersonAny, /JOIN priori pri/);
+  assert.match(byPersonAny, /palio_partecipazione_mangini ppm/);
 
   const crossYear = buildRecipeSql('same_horse_consecutive_cross_year');
   assert.match(crossYear, /prev\.anno <> curr\.anno/);
@@ -134,11 +152,49 @@ test('buildRecipeSql — SQL read-only con parametri validati', () => {
   assert.match(byYearSnake, /<= 2025/);
 });
 
+test('validateRecipeParams — palii_by_person richiede person', () => {
+  assert.throws(
+    () => validateRecipeParams('palii_by_person', {}),
+    /person/i,
+  );
+  assert.doesNotThrow(() =>
+    validateRecipeParams('palii_by_person', { person: 'Zalaffi', role: 'capitano' }),
+  );
+  assert.throws(
+    () => validateRecipeParams('palii_by_person', { person: 'X', role: 'invalid' }),
+    /role/i,
+  );
+});
+
 test('RECIPE_NAMES — copre tutte le ricette previste', () => {
   assert.deepEqual(RECIPE_NAMES, [
     'same_horse_consecutive_cross_year',
     'wins_by_contrada',
     'last_win',
     'palio_participants',
+    'palii_by_person',
+    'contrada_win_totals',
+    'wins_by_fantino',
+    'wins_by_horse',
   ]);
+});
+
+test('buildRecipeSql — contrada_win_totals e vittorie per fantino/cavallo', () => {
+  const totals = buildRecipeSql('contrada_win_totals', { year_from: 1900, limit: 5 });
+  assert.match(totals, /COUNT\(\*\)::int AS vittorie/);
+  assert.match(totals, />= 1900/);
+  assert.match(totals, /LIMIT 5/);
+
+  const fantino = buildRecipeSql('wins_by_fantino', { person: 'Brucino' });
+  assert.match(fantino, /pp\.vincitrice/);
+  assert.match(fantino, /f\.soprannome ILIKE '%Brucino%'/);
+
+  const horse = buildRecipeSql('wins_by_horse', { horse: 'Ugo' });
+  assert.match(horse, /ca\.nome ILIKE '%Ugo%'/);
+  assert.match(horse, /pp\.vincitrice/);
+});
+
+test('validateRecipeParams — wins_by_horse richiede horse', () => {
+  assert.throws(() => validateRecipeParams('wins_by_horse', {}), /horse/i);
+  assert.doesNotThrow(() => validateRecipeParams('wins_by_horse', { cavallo: 'Isola' }));
 });

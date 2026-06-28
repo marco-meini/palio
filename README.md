@@ -9,37 +9,32 @@ Chat locale per domande su edizioni, contrade, cavalli e risultati. Il backend u
 ### Prerequisiti
 
 - Node.js 20+
-- Postgres locale configurato in `.skills/postgres/config.toml` (non versionato)
-- Config backend: `server/config/config.mjs` (non versionato; vedi sotto)
+- Postgres con dati Palio
+- File `.env` nella root del repo (copia da `.env.example`)
 
 ### Setup
 
 ```bash
-# Backend
+npm install
 cd server && npm install
-cp config/config.example.mjs config/config.mjs
-# Modifica config.mjs: anthropic.apiKey, db.* se serve
-
-# Frontend
 cd client && npm install
+
+cp .env.example .env
+# Modifica .env: DATABASE_URL, ANTHROPIC_API_KEY, auth se serve
 ```
 
-Opzioni in [`server/config/config.example.mjs`](server/config/config.example.mjs) (copia in `config.mjs`):
+Variabili principali (elenco completo in [`.env.example`](.env.example)):
 
-| Chiave | Default | Descrizione |
-|--------|---------|-------------|
-| `anthropic.apiKey` | — | Obbligatoria per la chat |
-| `anthropic.model` | `claude-sonnet-4-6` | Modello Claude |
-| `postgres.cli` | `~/.agents/skills/postgres/scripts/postgres` | Launcher skill Postgres |
-| `postgres.projectRoot` | root repo | Directory con `.skills/postgres/config.toml` |
-| `postgres.profile` | `local` | Profilo connessione |
-| `server.port` | `3001` | Porta API |
-| `server.corsOrigin` | `http://localhost:4200` | Origine Angular dev |
-| `auth.enabled` | `false` | `true` in produzione; `false` in dev senza Google |
-| `auth.sessionSecret` | — | Segreto ≥32 char per JWT sessione (HS256) |
-| `db.*` | localhost | Pool Postgres (task palio.org, **allowlist utenti Dimmelo**) |
-| `auth.publicApiUrl` | `http://localhost:3001` | Base URL API (redirect OAuth callback) |
-| `auth.publicAppUrl` | `http://localhost:4200` | URL frontend dopo login |
+| Variabile | Dev tipico | Descrizione |
+|-----------|------------|-------------|
+| `DATABASE_URL` | `postgresql://...@127.0.0.1:5432/palio` | Pool API / scraper / auth |
+| `CHAT_DATABASE_URL` | (opzionale) | Pool read-only chat (`palio_chat_ro`) |
+| `ANTHROPIC_API_KEY` | `sk-ant-...` | Obbligatoria per la chat |
+| `AUTH_ENABLED` | `false` | `true` in produzione |
+| `CORS_ORIGIN` | `http://localhost:4200` | Origine Angular dev |
+| `SERVER_PORT` | `3001` | Porta API |
+
+Produzione: stesse chiavi in `.env.production` (vedi [`.env.production.example`](.env.production.example)).
 
 ### Avvio in sviluppo
 
@@ -76,7 +71,7 @@ cd client && npm run build     # build Angular
 
 Dimmelo può richiedere login Google prima di chiamare `POST /api/chat`. Il backend gestisce l’OAuth Authorization Code, emette un cookie di sessione **httpOnly** (JWT firmato con `jose`) e controlla che l’email sia presente in Postgres (`dimmelo_users`).
 
-In sviluppo locale, lascia `auth.enabled: false` in `server/config/config.mjs` per usare la chat senza configurare Google.
+In sviluppo locale, lascia `AUTH_ENABLED=false` in `.env` per usare la chat senza configurare Google.
 
 #### Google Cloud Console
 
@@ -86,9 +81,9 @@ In sviluppo locale, lascia `auth.enabled: false` in `server/config/config.mjs` p
    - Dev: `http://localhost:3001/api/auth/google/callback`
    - Prod: `https://<tuo-dominio>/api/auth/google/callback` (stesso host del proxy API)
 4. Credenziali OAuth (scegli una opzione):
-   - **File (consigliato):** copia il JSON da Google in `server/config/google-oauth.json` (non versionato; vedi `server/config/google-oauth.example.json`). Lascia `auth.google.clientId` / `clientSecret` vuoti in `config.mjs`.
-   - **Inline:** imposta `auth.google.clientId` e `clientSecret` in `server/config/config.mjs` (ha priorità sui campi del file).
-5. Genera un segreto sessione: `openssl rand -base64 48` → `auth.sessionSecret`.
+   - **Variabili `.env`:** `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`
+   - **File JSON:** copia in `server/config/google-oauth.json` e imposta `GOOGLE_OAUTH_JSON_PATH`
+5. Genera un segreto sessione: `openssl rand -base64 48` → `AUTH_SESSION_SECRET` in `.env`.
 6. Applica la migration utenti e aggiungi account autorizzati (vedi sotto **Utenti Dimmelo**).
    - Deve essere l’**email principale del profilo Google** usato al login.
    - Se vedi *«account Google non è autorizzato»* con `Account usato: nome@***`, verifica su [account.google.com](https://myaccount.google.com) l’email e inseriscila in `dimmelo_users`.
@@ -125,8 +120,10 @@ Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, conta
    # DATABASE_URL=postgresql://postgres:PASSWORD@postgres:5432/palio
    # AUTH_*, ANTHROPIC_API_KEY, GOOGLE_CLIENT_ID/SECRET (o volume google-oauth.json)
    ```
-3. Genera l’indice regolamento (una tantum, o dopo aggiornamento PDF):
+3. Abilita pgvector e crea la tabella regolamento (una tantum), poi indicizza il PDF:
    ```bash
+   psql "$DATABASE_URL" -f db/bootstrap/03_pgvector.sql
+   psql "$DATABASE_URL" -f db/migrations/released/regolamento_chunks.sql
    cd server && npm run index-regolamento
    ```
 4. Avvia stack (FE su `127.0.0.1:8080`, BE solo rete interna):
@@ -139,7 +136,7 @@ Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, conta
 6. Google OAuth redirect URI: `https://dimmelo.marcomeini.it/api/auth/google/callback`
 7. Verifica: `curl -s https://dimmelo.marcomeini.it/api/health`
 
-In Docker il backend usa **`DATABASE_URL`** e il driver `pg` (non la skill Postgres CLI). In dev locale resta `config.mjs` + skill CLI.
+In Docker il backend usa **`DATABASE_URL`** da `.env.production`. In dev: `.env` nella root del repo.
 
 **Portainer dietro Caddy:** se compare `Forbidden - origin invalid`, imposta `TRUSTED_ORIGINS=portainer.marcomeini.it` sul container Portainer e inoltra `Host` / `X-Forwarded-Proto` nel proxy Caddy.
 
@@ -343,22 +340,19 @@ Web app in [`client/`](client/) per interrogare il database in linguaggio natura
 
 ### Prerequisiti
 
-- Database Palio popolato e profilo in `.skills/postgres/config.toml`
-- Skill Postgres installata: `~/.agents/skills/postgres/scripts/postgres`
-- `server/config/config.mjs` con `anthropic.apiKey` (copia da [`server/config/config.example.mjs`](server/config/config.example.mjs))
+- Database Palio popolato
+- `.env` nella root (copia da `.env.example`) con `DATABASE_URL` e `ANTHROPIC_API_KEY`
 
 ### Avvio in sviluppo
 
 ```bash
-# dalla root del repo
-cp server/config/config.example.mjs server/config/config.mjs
-# imposta anthropic.apiKey in server/config/config.mjs
+cp .env.example .env
+# imposta DATABASE_URL e ANTHROPIC_API_KEY in .env
 
-npm install              # concurrently (root)
+npm install
 cd server && npm install
 cd ../client && npm install
 
-# terminale unico (API :3001 + Angular :4200)
 npm run dev
 ```
 
@@ -369,7 +363,14 @@ Oppure due terminali: `npm run dev:api` e `npm run dev:client`.
 
 ### Regolamento (RAG)
 
-Dimmelo può rispondere anche su **regole e regolamento ufficiale** tramite il tool `search_regolamento`, che interroga un indice vettoriale generato dal PDF in [`server/doc/Regolamento per il Palio.pdf`](server/doc/Regolamento%20per%20il%20Palio.pdf).
+Dimmelo può rispondere anche su **regole e regolamento ufficiale** tramite il tool `search_regolamento`, che interroga chunk vettoriali in Postgres (**pgvector**) generati dal PDF in [`server/doc/Regolamento per il Palio.pdf`](server/doc/Regolamento%20per%20il%20Palio.pdf).
+
+**Prerequisiti DB** (una tantum, come superuser):
+
+```bash
+psql -h … -U postgres -d palio -f db/bootstrap/03_pgvector.sql
+psql -h … -U postgres -d palio -f db/migrations/released/regolamento_chunks.sql
+```
 
 Dopo aver aggiornato il PDF (o al primo setup):
 
@@ -377,9 +378,9 @@ Dopo aver aggiornato il PDF (o al primo setup):
 cd server && npm run index-regolamento
 ```
 
-Lo script estrae il testo (OCR se il PDF è scansionato; richiede **poppler**: `brew install poppler`), calcola gli embedding e scrive `server/data/regolamento-index.json`. Il file va versionato o rigenerato in deploy.
+Lo script estrae il testo (OCR se il PDF è scansionato; richiede **poppler**: `brew install poppler`), calcola gli embedding locali e scrive i chunk in `regolamento_chunks`.
 
-Opzioni in `server/config/config.mjs` → `regolamento.indexPath`, `regolamento.topK`, `regolamento.minScore`.
+Opzioni in `.env`: `REGOLAMENTO_TOP_K`, `REGOLAMENTO_MIN_SCORE`.
 
 ### Stack
 
@@ -388,7 +389,7 @@ Opzioni in `server/config/config.mjs` → `regolamento.indexPath`, `regolamento.
 | Frontend | Angular 21, Tailwind CSS 4, UI stile Spartan/shadcn (Tailwind) |
 | Backend | Fastify, Vercel AI SDK, `@ai-sdk/anthropic` |
 | DB | Postgres skill CLI (`query run`, `schema inspect`, `query find`) |
-| Regolamento | Embedding locali (`@xenova/transformers`), indice JSON, OCR (`tesseract.js` + `pdftoppm`) |
+| Regolamento | Embedding locali (`@xenova/transformers`), pgvector su Postgres, OCR (`tesseract.js` + `pdftoppm`) |
 
 Per aggiungere componenti [Spartan-ng](https://www.spartan.ng) in seguito: `cd client && npx @spartan-ng/cli init` (richiede rete/registry).
 

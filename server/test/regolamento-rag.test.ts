@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initConfig } from '../src/config.js';
 import { cosineSimilarity } from '../src/lib/regolamento-embeddings.js';
+import { formatSearchResults, rankChunks } from '../src/lib/regolamento-rag.js';
 import {
-  formatSearchResults,
-  rankChunks,
-  resetIndexCache,
-} from '../src/lib/regolamento-rag.js';
+  buildRegolamentoSearchSql,
+  resetPgvectorTypesCache,
+} from '../src/lib/regolamento-store.js';
 
 test('cosineSimilarity — vettori allineati e ortogonali', () => {
   assert.equal(cosineSimilarity([1, 0], [1, 0]), 1);
@@ -15,6 +15,8 @@ test('cosineSimilarity — vettori allineati e ortogonali', () => {
 });
 
 test('rankChunks — ordina per similarità e rispetta topK/minScore', async () => {
+  process.env.DATABASE_URL ??= 'postgresql://localhost/palio_test';
+  process.env.ANTHROPIC_API_KEY ??= 'test-key';
   await initConfig();
   const chunks = [
     { id: 'a', text: 'canape rincorsa', section: null, page: null, embedding: [1, 0] },
@@ -36,7 +38,6 @@ test('formatSearchResults — include metadati e testo', () => {
       section: 'Art. 1',
       page: 3,
       score: 0.812,
-      embedding: [],
     },
   ]);
   assert.match(out, /Passaggi dal Regolamento/);
@@ -50,7 +51,14 @@ test('formatSearchResults — nessun hit', () => {
   assert.match(out, /Nessun passaggio rilevante/);
 });
 
-test('resetIndexCache — non lancia', () => {
-  resetIndexCache();
-  assert.doesNotThrow(() => resetIndexCache());
+test('buildRegolamentoSearchSql — cosine distance e limit', () => {
+  const sql = buildRegolamentoSearchSql(8, 0.35);
+  assert.match(sql, /embedding <=> \$1::vector/);
+  assert.match(sql, /LIMIT 8/);
+  assert.match(sql, />= 0\.35/);
+});
+
+test('resetPgvectorTypesCache — non lancia', () => {
+  resetPgvectorTypesCache();
+  assert.doesNotThrow(() => resetPgvectorTypesCache());
 });

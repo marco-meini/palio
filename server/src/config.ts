@@ -1,38 +1,25 @@
-import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { homedir } from 'node:os';
 import { mergeGoogleOAuthCredentials } from './lib/google-oauth.js';
-import { repoRoot, serverRoot } from './paths.js';
+import { loadEnvFiles } from './load-env.js';
+import { repoRoot } from './paths.js';
 
 export interface AppConfig {
-  db?: {
-    host?: string;
-    port?: number;
-    database?: string;
-    user?: string;
-    password?: string;
-  };
-  postgres?: {
-    cli?: string;
-    projectRoot?: string;
-    profile?: string;
-  };
   anthropic: {
     apiKey: string;
     model: string;
-    maxOutputTokens?: number;
-    maxToolSteps?: number;
-    maxRegolamentoCalls?: number;
-    maxToolResultChars?: number;
-    maxHistoryMessages?: number;
-    maxMessageChars?: number;
-    compactToolResults?: boolean;
-    maxToolResultRows?: number;
+    maxOutputTokens: number;
+    maxToolSteps: number;
+    maxRegolamentoCalls: number;
+    maxToolResultChars: number;
+    maxHistoryMessages: number;
+    maxMessageChars: number;
+    compactToolResults: boolean;
+    maxToolResultRows: number;
   };
-  regolamento?: {
-    indexPath?: string;
-    topK?: number;
-    minScore?: number;
+  regolamento: {
+    topK: number;
+    minScore: number;
   };
   server: {
     port: number;
@@ -49,6 +36,12 @@ export interface AppConfig {
     publicApiUrl: string;
     publicAppUrl: string;
   };
+  /** Fallback skill Postgres CLI (se il driver pg non è disponibile). */
+  postgres: {
+    cli: string;
+    projectRoot: string;
+    profile: string;
+  };
 }
 
 let cachedConfig: AppConfig | null = null;
@@ -58,72 +51,65 @@ function envBool(raw: string | undefined, defaultValue: boolean): boolean {
   return /^(1|true|yes|on)$/i.test(raw);
 }
 
-function applyEnvOverrides(base: AppConfig): AppConfig {
-  const cfg = structuredClone(base) as AppConfig;
-
-  if (process.env.ANTHROPIC_API_KEY) {
-    cfg.anthropic.apiKey = process.env.ANTHROPIC_API_KEY;
-  }
-  if (process.env.ANTHROPIC_MODEL) {
-    cfg.anthropic.model = process.env.ANTHROPIC_MODEL;
-  }
-
-  if (process.env.SERVER_PORT) {
-    cfg.server.port = Number(process.env.SERVER_PORT);
-  }
-  if (process.env.CORS_ORIGIN) {
-    cfg.server.corsOrigin = process.env.CORS_ORIGIN;
-  }
-
-  if (process.env.AUTH_ENABLED !== undefined && process.env.AUTH_ENABLED !== '') {
-    cfg.auth.enabled = envBool(process.env.AUTH_ENABLED, cfg.auth.enabled);
-  }
-  if (process.env.AUTH_SESSION_SECRET) {
-    cfg.auth.sessionSecret = process.env.AUTH_SESSION_SECRET;
-  }
-  if (process.env.AUTH_SESSION_TTL_SECONDS) {
-    cfg.auth.sessionTtlSeconds = Number(process.env.AUTH_SESSION_TTL_SECONDS);
-  }
-  if (process.env.AUTH_PUBLIC_API_URL) {
-    cfg.auth.publicApiUrl = process.env.AUTH_PUBLIC_API_URL;
-  }
-  if (process.env.AUTH_PUBLIC_APP_URL) {
-    cfg.auth.publicAppUrl = process.env.AUTH_PUBLIC_APP_URL;
-  }
-
-  const googleFromEnv = {
-    clientId: process.env.GOOGLE_CLIENT_ID ?? '',
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? '',
-  };
-  cfg.auth.google = mergeGoogleOAuthCredentials({
-    clientId: googleFromEnv.clientId || cfg.auth.google?.clientId,
-    clientSecret: googleFromEnv.clientSecret || cfg.auth.google?.clientSecret,
-  });
-
-  if (process.env.GOOGLE_OAUTH_JSON_PATH) {
-    cfg.auth.google = mergeGoogleOAuthCredentials(cfg.auth.google, process.env.GOOGLE_OAUTH_JSON_PATH);
-  }
-
-  return cfg;
+function envInt(raw: string | undefined, defaultValue: number): number {
+  if (raw === undefined || raw === '') return defaultValue;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : defaultValue;
 }
 
-async function loadBaseConfig(): Promise<AppConfig> {
-  const configDir = path.join(serverRoot, 'config');
-  const localPath = path.join(configDir, 'config.mjs');
-  const examplePath = path.join(configDir, 'config.example.mjs');
+function envString(raw: string | undefined, defaultValue = ''): string {
+  if (raw === undefined || raw === '') return defaultValue;
+  return raw;
+}
 
-  if (fs.existsSync(localPath)) {
-    const mod = await import(pathToFileURL(localPath).href);
-    return mod.default as AppConfig;
-  }
+function buildConfigFromEnv(): AppConfig {
+  const googleOAuthPath =
+    process.env.GOOGLE_OAUTH_JSON_PATH ??
+    path.join(repoRoot, 'server/config/google-oauth.json');
 
-  const mod = await import(pathToFileURL(examplePath).href);
-  return mod.default as AppConfig;
+  return {
+    anthropic: {
+      apiKey: envString(process.env.ANTHROPIC_API_KEY),
+      model: envString(process.env.ANTHROPIC_MODEL, 'claude-sonnet-4-6'),
+      maxOutputTokens: envInt(process.env.ANTHROPIC_MAX_OUTPUT_TOKENS, 4096),
+      maxToolSteps: envInt(process.env.ANTHROPIC_MAX_TOOL_STEPS, 12),
+      maxRegolamentoCalls: envInt(process.env.ANTHROPIC_MAX_REGOLAMENTO_CALLS, 2),
+      maxToolResultChars: envInt(process.env.ANTHROPIC_MAX_TOOL_RESULT_CHARS, 6000),
+      maxHistoryMessages: envInt(process.env.ANTHROPIC_MAX_HISTORY_MESSAGES, 10),
+      maxMessageChars: envInt(process.env.ANTHROPIC_MAX_MESSAGE_CHARS, 4000),
+      compactToolResults: envBool(process.env.ANTHROPIC_COMPACT_TOOL_RESULTS, true),
+      maxToolResultRows: envInt(process.env.ANTHROPIC_MAX_TOOL_RESULT_ROWS, 50),
+    },
+    regolamento: {
+      topK: envInt(process.env.REGOLAMENTO_TOP_K, 8),
+      minScore: Number(process.env.REGOLAMENTO_MIN_SCORE ?? 0.35),
+    },
+    server: {
+      port: envInt(process.env.SERVER_PORT, 3001),
+      corsOrigin: envString(process.env.CORS_ORIGIN, 'http://localhost:4200'),
+    },
+    auth: {
+      enabled: envBool(process.env.AUTH_ENABLED, false),
+      sessionSecret: envString(process.env.AUTH_SESSION_SECRET),
+      sessionTtlSeconds: envInt(process.env.AUTH_SESSION_TTL_SECONDS, 604800),
+      google: mergeGoogleOAuthCredentials(undefined, googleOAuthPath),
+      publicApiUrl: envString(process.env.AUTH_PUBLIC_API_URL, 'http://localhost:3001'),
+      publicAppUrl: envString(process.env.AUTH_PUBLIC_APP_URL, 'http://localhost:4200'),
+    },
+    postgres: {
+      cli: envString(
+        process.env.POSTGRES_CLI,
+        path.join(homedir(), '.agents/skills/postgres/scripts/postgres'),
+      ),
+      projectRoot: envString(process.env.DB_PROJECT_ROOT, repoRoot),
+      profile: envString(process.env.DB_PROFILE, 'local'),
+    },
+  };
 }
 
 export async function initConfig(): Promise<AppConfig> {
-  const base = await loadBaseConfig();
-  cachedConfig = applyEnvOverrides(base);
+  loadEnvFiles();
+  cachedConfig = buildConfigFromEnv();
   return cachedConfig;
 }
 

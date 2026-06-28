@@ -43,7 +43,7 @@ export class AuthController extends Abstract_Controller {
 
     if (!hasGoogleOAuthCredentials(auth.google)) {
       console.warn(
-        'auth.enabled è true ma Google OAuth non è configurato: /api/auth/google risponde 503 finché non imposti clientId e clientSecret in config.mjs o server/config/google-oauth.json',
+        'auth.enabled è true ma Google OAuth non è configurato: imposta GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET o GOOGLE_OAUTH_JSON_PATH in .env',
       );
     }
   }
@@ -84,7 +84,7 @@ export class AuthController extends Abstract_Controller {
     if (!hasGoogleOAuthCredentials(auth.google)) {
       res.status(503).send({
         error:
-          'Google OAuth non configurato. Imposta auth.google in server/config/config.mjs oppure server/config/google-oauth.json',
+          'Google OAuth non configurato. Imposta GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET o GOOGLE_OAUTH_JSON_PATH in .env',
       });
       return;
     }
@@ -102,7 +102,7 @@ export class AuthController extends Abstract_Controller {
     if (!hasGoogleOAuthCredentials(auth.google)) {
       res.status(503).send({
         error:
-          'Google OAuth non configurato. Imposta auth.google in server/config/config.mjs oppure server/config/google-oauth.json',
+          'Google OAuth non configurato. Imposta GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET o GOOGLE_OAUTH_JSON_PATH in .env',
       });
       return;
     }

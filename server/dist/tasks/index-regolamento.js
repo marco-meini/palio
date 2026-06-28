@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { getConfig, initConfig } from '../config.js';
+import { resolveApiPgConfig } from '../lib/db-config.js';
 import { EMBEDDING_MODEL, chunkRegolamentoText, embedText, } from '../lib/regolamento-embeddings.js';
 import { extractTextFromPdfFile } from '../lib/regolamento-pdf-text.js';
+import { PgClientManager } from '../lib/pg-client-manager.js';
+import { countRegolamentoChunks, replaceRegolamentoChunks, } from '../lib/regolamento-store.js';
 import { serverRoot } from '../paths.js';
 const pdfPath = path.join(serverRoot, 'doc/Regolamento per il Palio.pdf');
-const outPath = path.join(serverRoot, 'data/regolamento-index.json');
 async function main() {
     if (!fs.existsSync(pdfPath)) {
         throw new Error(`PDF non trovato: ${pdfPath}`);
@@ -32,16 +35,20 @@ async function main() {
             console.info(`[index-regolamento] ${i + 1}/${rawChunks.length}`);
         }
     }
-    const index = {
-        version: 1,
-        model: EMBEDDING_MODEL,
-        source: 'server/doc/Regolamento per il Palio.pdf',
-        createdAt: new Date().toISOString(),
-        chunks,
-    };
-    fs.mkdirSync(path.dirname(outPath), { recursive: true });
-    fs.writeFileSync(outPath, JSON.stringify(index));
-    console.info(`[index-regolamento] Scritto ${outPath} (${chunks.length} chunk)`);
+    await initConfig();
+    const pg = new PgClientManager(resolveApiPgConfig(getConfig()));
+    try {
+        const written = await replaceRegolamentoChunks(pg, {
+            source: pdfPath,
+            model: EMBEDDING_MODEL,
+            chunks,
+        });
+        const total = await countRegolamentoChunks(pg, pdfPath);
+        console.info(`[index-regolamento] DB: ${written} chunk scritti (${total} totali per source)`);
+    }
+    finally {
+        await pg.disconnect();
+    }
 }
 main().catch((err) => {
     console.error(err);

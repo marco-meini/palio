@@ -12,6 +12,15 @@ export class PgClientManager {
     });
   }
 
+  async withClient<T>(fn: (client: pg.PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.__pool.connect();
+    try {
+      return await fn(client);
+    } finally {
+      client.release();
+    }
+  }
+
   async startTransaction() {
     let transactionClient: pg.PoolClient | null = null;
     try {
@@ -49,6 +58,34 @@ export class PgClientManager {
     } catch (e) {
       if (transactionClient) transactionClient.release();
       throw e;
+    }
+  }
+
+  /**
+   * Esegue una singola query read-only in envelope transazionale (chat / MCP).
+   * Usa protocollo extended (prepared) e distrugge la connessione al rilascio.
+   */
+  async queryReadOnly(sql: string, options: { timeoutMs?: number } = {}) {
+    const timeoutMs = Math.max(1, Math.floor(options.timeoutMs ?? 30_000));
+    const client = await this.__pool.connect();
+    try {
+      await client.query('BEGIN TRANSACTION READ ONLY');
+      await client.query(`SET LOCAL statement_timeout = '${timeoutMs}ms'`);
+      const result = await client.query({
+        text: sql,
+        name: `ro_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      });
+      await client.query('COMMIT');
+      return result;
+    } catch (e) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        /* ignore rollback failure */
+      }
+      throw e;
+    } finally {
+      client.release(true);
     }
   }
 

@@ -1,58 +1,41 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import type { AppConfig } from '../config.js';
-import { repoRoot } from '../paths.js';
+import type { PoolConfig } from 'pg';
 
-export function loadPgConfig(profile = process.env.DB_PROFILE || 'local') {
-  if (process.env.DATABASE_URL) {
-    return { connectionString: process.env.DATABASE_URL };
+function requireDatabaseUrl(name: string, value: string | undefined): PoolConfig {
+  if (!value?.trim()) {
+    throw new Error(
+      `${name} non impostato. Copia .env.example in .env (dev) o .env.production (prod) e compila DATABASE_URL.`,
+    );
   }
-
-  const configPath = path.join(repoRoot, '.skills/postgres/config.toml');
-  if (!fs.existsSync(configPath)) {
-    throw new Error(`Missing ${configPath} and DATABASE_URL`);
-  }
-
-  const raw = fs.readFileSync(configPath, 'utf8');
-  const sectionKey = `[tools.postgres.profiles.${profile}]`;
-  const start = raw.indexOf(sectionKey);
-  if (start === -1) {
-    throw new Error(`Profile ${profile} not found in config.toml`);
-  }
-
-  const slice = raw.slice(start);
-  const end = slice.indexOf('\n[', sectionKey.length);
-  const block = end === -1 ? slice : slice.slice(0, end);
-
-  const pick = (key: string) => {
-    const m = block.match(new RegExp(`^${key}\\s*=\\s*"?([^"\\n]+)"?`, 'm'));
-    return m ? m[1].trim() : undefined;
-  };
-
-  return {
-    host: pick('host'),
-    port: Number(pick('port')),
-    database: pick('database'),
-    user: pick('user'),
-    password: pick('password'),
-  };
+  return { connectionString: value.trim() };
 }
 
-export function resolveApiPgConfig(config: Partial<AppConfig> = {}) {
-  if (process.env.DATABASE_URL) {
-    return loadPgConfig();
+/** Pool applicativo (API, scraper, auth, RAG). */
+export function resolveApiPgConfig(): PoolConfig {
+  return requireDatabaseUrl('DATABASE_URL', process.env.DATABASE_URL);
+}
+
+/** Pool read-only chat / MCP. Fallback su DATABASE_URL se CHAT_DATABASE_URL assente. */
+export function resolveChatPgConfig(): PoolConfig {
+  const chatUrl = process.env.CHAT_DATABASE_URL?.trim();
+  if (chatUrl) {
+    return { connectionString: chatUrl };
   }
 
-  const db = config.db;
-  if (db?.host) {
-    return {
-      host: db.host,
-      port: db.port ?? 5432,
-      database: db.database,
-      user: db.user,
-      password: db.password,
-    };
+  const apiUrl = process.env.DATABASE_URL?.trim();
+  if (apiUrl) {
+    console.warn(
+      '[chat-db] CHAT_DATABASE_URL non impostato — uso DATABASE_URL. ' +
+        'In produzione imposta un utente read-only (palio_chat_ro).',
+    );
+    return { connectionString: apiUrl };
   }
 
-  return loadPgConfig(process.env.DB_PROFILE || config.postgres?.profile || 'local');
+  throw new Error(
+    'CHAT_DATABASE_URL o DATABASE_URL richiesto. Vedi .env.example nella root del repo.',
+  );
+}
+
+/** Alias usato da task legacy; equivale a resolveApiPgConfig. */
+export function loadPgConfig(): PoolConfig {
+  return resolveApiPgConfig();
 }

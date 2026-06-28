@@ -47,11 +47,12 @@ function wrapToolResult(value) {
     });
     return truncateForModel(compacted, s.maxToolResultChars);
 }
-export function runChatAgent({ messages, onToolEvent, }) {
+export function runChatAgent({ messages, onToolEvent, pg, }) {
     return streamPalioChat({
         messages: trimMessagesForModel(messages),
         onToolStart: (name) => onToolEvent?.({ type: 'tool_start', name }),
         onToolEnd: (name) => onToolEvent?.({ type: 'tool_end', name }),
+        pg,
     });
 }
 function countRegolamentoCalls(steps) {
@@ -59,7 +60,7 @@ function countRegolamentoCalls(steps) {
         .flatMap((step) => step.toolCalls ?? [])
         .filter((call) => call.toolName === 'search_regolamento').length;
 }
-export function streamPalioChat({ messages, onToolStart, onToolEnd, }) {
+export function streamPalioChat({ messages, onToolStart, onToolEnd, pg, }) {
     const s = settings();
     return streamText({
         model: s.anthropic(s.config.anthropic.model),
@@ -87,7 +88,7 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd, }) {
                         console.info('[chat-regolamento]', query.slice(0, 200));
                         return wrapToolResult(await searchRegolamento(query, {
                             topK: s.config.regolamento?.topK ?? 8,
-                        }));
+                        }, pg));
                     }
                     catch (err) {
                         const message = err instanceof Error ? err.message : String(err);
@@ -108,6 +109,10 @@ export function streamPalioChat({ messages, onToolStart, onToolEnd, }) {
                     year_to: z.number().int().optional(),
                     source_code: z.string().optional(),
                     data_palio: z.string().optional(),
+                    person: z.string().optional(),
+                    role: z
+                        .enum(['capitano', 'priore', 'barbaresco', 'fantino', 'mangini', 'any'])
+                        .optional(),
                 }),
                 execute: async (params) => {
                     onToolStart?.('run_palio_recipe');

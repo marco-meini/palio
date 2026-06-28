@@ -60,14 +60,17 @@ function wrapToolResult(value: unknown) {
 export function runChatAgent({
   messages,
   onToolEvent,
+  pg,
 }: {
   messages: ModelMessage[];
   onToolEvent?: (event: { type: 'tool_start' | 'tool_end'; name: string }) => void;
+  pg?: import('./pg-client-manager.js').PgClientManager | null;
 }) {
   return streamPalioChat({
     messages: trimMessagesForModel(messages),
     onToolStart: (name) => onToolEvent?.({ type: 'tool_start', name }),
     onToolEnd: (name) => onToolEvent?.({ type: 'tool_end', name }),
+    pg,
   });
 }
 
@@ -81,10 +84,12 @@ export function streamPalioChat({
   messages,
   onToolStart,
   onToolEnd,
+  pg,
 }: {
   messages: ModelMessage[];
   onToolStart?: (name: string) => void;
   onToolEnd?: (name: string) => void;
+  pg?: import('./pg-client-manager.js').PgClientManager | null;
 }) {
   const s = settings();
   return streamText({
@@ -113,9 +118,13 @@ export function streamPalioChat({
           try {
             console.info('[chat-regolamento]', query.slice(0, 200));
             return wrapToolResult(
-              await searchRegolamento(query, {
-                topK: s.config.regolamento?.topK ?? 8,
-              }),
+              await searchRegolamento(
+                query,
+                {
+                  topK: s.config.regolamento?.topK ?? 8,
+                },
+                pg,
+              ),
             );
           } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -136,6 +145,12 @@ export function streamPalioChat({
           year_to: z.number().int().optional(),
           source_code: z.string().optional(),
           data_palio: z.string().optional(),
+          person: z.string().optional(),
+          horse: z.string().optional(),
+          limit: z.number().int().positive().optional(),
+          role: z
+            .enum(['capitano', 'priore', 'barbaresco', 'fantino', 'mangini', 'any'])
+            .optional(),
         }),
         execute: async (params) => {
           onToolStart?.('run_palio_recipe');

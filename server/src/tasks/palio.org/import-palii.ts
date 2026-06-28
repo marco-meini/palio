@@ -8,7 +8,7 @@
 import { HttpsRequests } from '../../lib/https-requests.js';
 import * as cheerio from 'cheerio';
 import moment from 'moment';
-import { getConfig, initConfig } from '../../config.js';
+import { initConfig } from '../../config.js';
 import { resolveApiPgConfig } from '../../lib/db-config.js';
 import { Model } from '../../model/pg-models.js';
 
@@ -40,7 +40,7 @@ const CONTRADE = {
 
 class ImportPalii {
   constructor() {
-    this.__model = new Model(resolveApiPgConfig(getConfig()) as import('pg').PoolConfig);
+    this.__model = new Model(resolveApiPgConfig() as import('pg').PoolConfig);
   }
 
   

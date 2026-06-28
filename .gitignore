@@ -2,6 +2,8 @@ node_modules
 client/node_modules
 server/node_modules
 
+.env
+.env.local
 server/config/config.mjs
 server/config/google-oauth.json
 .env.production

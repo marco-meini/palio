@@ -25,8 +25,9 @@ Opzioni:
 Prerequisiti:
   - Docker e Docker Compose
   - Rete Docker esterna "postgres" con container DB
-  - File .env.production (da .env.production.example)
-  - server/data/regolamento-index.json (cd server && npm run index-regolamento)
+  - File .env.production (da .env.production.example; stesse chiavi di .env.example)
+  - db/bootstrap/03_pgvector.sql + db/migrations/released/regolamento_chunks.sql
+  - cd server && npm run index-regolamento (dopo migration pgvector)
   - server/dist/main.js (npm run build --prefix server)
   - Caddy: blocco dimmelo.marcomeini.it → 127.0.0.1:8080 (vedi docker/caddy-dimmelo.snippet)
 
@@ -112,6 +113,10 @@ docker_compose version >/dev/null 2>&1 || die "docker compose non trovato"
 require_env DATABASE_URL
 require_env ANTHROPIC_API_KEY
 
+if [[ -z "$(env_value CHAT_DATABASE_URL)" ]]; then
+  log "Nota: CHAT_DATABASE_URL non impostato — il chat userà DATABASE_URL (consigliato palio_chat_ro in prod)"
+fi
+
 auth_enabled="$(printf '%s' "$(env_value AUTH_ENABLED)" | tr '[:upper:]' '[:lower:]')"
 if [[ "$auth_enabled" == "true" ]]; then
   require_env AUTH_SESSION_SECRET
@@ -126,11 +131,13 @@ fi
 "${DOCKER[@]}" network inspect postgres >/dev/null 2>&1 \
   || die "Rete Docker 'postgres' non trovata — creala e collega il container Postgres"
 
-[[ -f server/data/regolamento-index.json ]] \
-  || die "Manca server/data/regolamento-index.json — genera con: cd server && npm run index-regolamento"
-
 [[ -f server/dist/main.js ]] \
   || die "Manca server/dist/main.js — compila con: npm run build --prefix server"
+
+log "Regolamento RAG: assicurati che pgvector sia abilitato e l'indice popolato:"
+log "  psql ... -f db/bootstrap/03_pgvector.sql"
+log "  psql ... -f db/migrations/released/regolamento_chunks.sql"
+log "  cd server && npm run index-regolamento"
 
 command -v git >/dev/null 2>&1 || die "git non trovato"
 [[ -d .git ]] || die "Non è un repository git"

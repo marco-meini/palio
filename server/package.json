@@ -7,6 +7,7 @@
     "build:watch": "tsc -w",
     "start": "node --enable-source-maps ./dist/main.js",
     "dev:api": "tsx ./src/main.ts",
+    "mcp:palio-db": "tsx ./src/mcp/palio-db-server.ts",
     "test": "node --import tsx --test test/**/*.test.ts",
     "index-regolamento": "tsx ./src/tasks/index-regolamento.ts"
   },
@@ -15,16 +16,19 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.81",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@xenova/transformers": "^2.17.2",
     "ai": "^6.0.0",
     "cheerio": "^1.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
     "express": "^5.1.0",
     "jose": "^6.0.0",
     "moment": "^2.29.4",
     "pdf-parse": "^1.1.1",
     "pg": "^8.13.1",
+    "pgvector": "^0.2.1",
     "tesseract.js": "^7.0.0",
     "zod": "^3.25.76"
   },

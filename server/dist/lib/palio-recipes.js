@@ -5,6 +5,7 @@ export const RECIPE_NAMES = [
     'wins_by_contrada',
     'last_win',
     'palio_participants',
+    'palii_by_person',
 ];
 /** @deprecated Use RECIPE_NAMES — alias per compatibilità */
 export const RECIPE_IDS = RECIPE_NAMES;
@@ -50,6 +51,54 @@ function contradaFilter(params) {
         return `c.id = ${assertInt(raw, 'contrada')}`;
     }
     return `c.name ILIKE ${sqlQuote(assertString(raw, 'contrada'))}`;
+}
+function optionalContradaFilter(params) {
+    const raw = params.contrada ?? params.contrada_name;
+    if (params.contrada_id != null) {
+        return `c.id = ${assertInt(params.contrada_id, 'contrada_id')}`;
+    }
+    if (raw == null || raw === '') {
+        return null;
+    }
+    if (typeof raw === 'number' || (typeof raw === 'string' && /^\d+$/.test(raw.trim()))) {
+        return `c.id = ${assertInt(raw, 'contrada')}`;
+    }
+    return `c.name ILIKE ${sqlQuote(assertString(raw, 'contrada'))}`;
+}
+function optionalContradaClause(params) {
+    const filter = optionalContradaFilter(params);
+    return filter ? `\n  AND ${filter}` : '';
+}
+const PERSON_ROLES = ['capitano', 'priore', 'barbaresco', 'fantino', 'mangini', 'any'];
+function personNamePattern(params) {
+    const raw = params.person ?? params.nome ?? params.name;
+    const name = assertString(raw, 'person');
+    return sqlQuote(`%${name}%`);
+}
+function personRole(params) {
+    if (params.role == null || params.role === '') {
+        return 'any';
+    }
+    const role = assertString(params.role, 'role').toLowerCase();
+    if (!PERSON_ROLES.includes(role)) {
+        throw new Error(`Parametro "role" deve essere uno di: ${PERSON_ROLES.join(', ')}`);
+    }
+    return role;
+}
+function personPaliiBranch(ruolo, personaExpr, joinSql, whereSql, params) {
+    return `
+SELECT
+  p.data_palio,
+  p.source_code,
+  c.name AS contrada,
+  '${ruolo}' AS ruolo,
+  ${personaExpr} AS persona
+FROM palio_partecipazioni pp
+JOIN palii p ON p.id = pp.palio_id
+JOIN contrade c ON c.id = pp.contrada_id
+${joinSql}
+WHERE ${whereSql}${optionalContradaClause(params)}${yearFilters(params)}
+`.trim();
 }
 function yearFilters(params) {
     const parts = [];
@@ -200,16 +249,54 @@ SELECT
   ${FANTINO_LABEL_SQL} AS fantino,
   f.nome AS fantino_nome,
   f.soprannome AS fantino_soprannome,
-  pp.ordine_arrivo
+  pp.ordine_arrivo,
+  cap.nome AS capitano,
+  pri.nome AS priore,
+  bar.nome AS barbaresco
 FROM palii p
 JOIN palio_partecipazioni pp ON pp.palio_id = p.id
 JOIN contrade c ON c.id = pp.contrada_id
 LEFT JOIN contrade ec ON ec.id = pp.estratta_da_id
 LEFT JOIN cavalli ca ON ca.id = pp.cavallo_id
 LEFT JOIN fantini f ON f.id = pp.fantino_id
+LEFT JOIN capitani cap ON cap.id = pp.capitano_id
+LEFT JOIN priori pri ON pri.id = pp.priore_id
+LEFT JOIN barbareschi bar ON bar.id = pp.barbaresco_id
 WHERE ${filters.join(' AND ')}
 ORDER BY pp.ordine NULLS LAST, pp.canape NULLS LAST, c.name
 `.trim();
+        },
+    },
+    palii_by_person: {
+        description: 'Palii in cui una persona compare per nome (capitano, priore, barbaresco, fantino, mangini); JOIN sulle anagrafiche',
+        validate(params) {
+            personNamePattern(params);
+            personRole(params);
+            if (params.contrada != null || params.contrada_id != null || params.contrada_name != null) {
+                contradaFilter(params);
+            }
+        },
+        buildSql(params) {
+            const pattern = personNamePattern(params);
+            const role = personRole(params);
+            const branches = [];
+            if (role === 'capitano' || role === 'any') {
+                branches.push(personPaliiBranch('capitano', 'cap.nome', 'JOIN capitani cap ON cap.id = pp.capitano_id', `cap.nome ILIKE ${pattern}`, params));
+            }
+            if (role === 'priore' || role === 'any') {
+                branches.push(personPaliiBranch('priore', 'pri.nome', 'JOIN priori pri ON pri.id = pp.priore_id', `pri.nome ILIKE ${pattern}`, params));
+            }
+            if (role === 'barbaresco' || role === 'any') {
+                branches.push(personPaliiBranch('barbaresco', 'bar.nome', 'JOIN barbareschi bar ON bar.id = pp.barbaresco_id', `bar.nome ILIKE ${pattern}`, params));
+            }
+            if (role === 'fantino' || role === 'any') {
+                branches.push(personPaliiBranch('fantino', FANTINO_LABEL_SQL, 'JOIN fantini f ON f.id = pp.fantino_id', `(f.nome ILIKE ${pattern} OR f.soprannome ILIKE ${pattern})`, params));
+            }
+            if (role === 'mangini' || role === 'any') {
+                branches.push(personPaliiBranch('mangini', 'm.nome', `JOIN palio_partecipazione_mangini ppm ON ppm.partecipazione_id = pp.id
+JOIN mangini m ON m.id = ppm.mangini_id`, `m.nome ILIKE ${pattern}`, params));
+            }
+            return `${branches.join('\nUNION ALL\n')}\nORDER BY data_palio, contrada, ruolo`;
         },
     },
 };
@@ -223,6 +310,12 @@ function normalizeParams(params) {
     }
     if (out.year_to != null && out.yearTo == null) {
         out.yearTo = out.year_to;
+    }
+    if (out.nome != null && out.person == null) {
+        out.person = out.nome;
+    }
+    if (out.name != null && out.person == null) {
+        out.person = out.name;
     }
     return out;
 }

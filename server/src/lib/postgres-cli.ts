@@ -2,13 +2,15 @@
 import { spawn } from 'node:child_process';
 import { getConfig } from '../config.js';
 import {
+  DEFAULT_READONLY_QUERY_TIMEOUT_MS,
   pgFindObjects,
   pgListTables,
   pgProfileTest,
   pgRunQuery,
   pgSchemaInspect,
 } from './pg-readonly-driver.js';
-const DEFAULT_TIMEOUT_MS = 30_000;
+
+const DEFAULT_TIMEOUT_MS = DEFAULT_READONLY_QUERY_TIMEOUT_MS;
 const MAX_OUTPUT_CHARS = 200_000;
 /** Limite per risultati tool passati al modello (chat) */
 export const TOOL_RESULT_MAX_CHARS = 6000;
@@ -16,7 +18,7 @@ const MAX_ROWS_HINT = 500;
 const SCHEMA_CACHE_TTL_MS = 60 * 60 * 1000;
 
 const FORBIDDEN_KEYWORD =
-  /\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|migration)\b/i;
+  /\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|GRANT|REVOKE|COMMIT|ROLLBACK|CALL|DO|COPY|LOCK|VACUUM|ANALYZE|REINDEX|CLUSTER|REFRESH|migration)\b/i;
 const ALLOWED_START = /^(SELECT|WITH|EXPLAIN)\b/i;
 
 const schemaCache: { data: string | null; expiresAt: number } = { data: null, expiresAt: 0 };
@@ -24,7 +26,8 @@ const schemaCache: { data: string | null; expiresAt: number } = { data: null, ex
 let sharedPg: import('./pg-client-manager.js').PgClientManager | null = null;
 
 /**
- * Usa il driver `pg` (Docker / DATABASE_URL) invece della skill Postgres CLI.
+ * Pool dedicato read-only per chat/MCP (ruolo palio_chat_ro).
+ * Separato dal pool applicativo con permessi di scrittura.
  */
 export function initPostgresCliPool(pg) {
   sharedPg = pg;
@@ -182,7 +185,12 @@ export function assertReadOnlySql(sql) {
     throw new Error('SQL vuoto non consentito');
   }
 
-  for (const statement of statements) {
+  const executable = statements.filter((statement) => stripSqlComments(statement).trim());
+  if (executable.length > 1) {
+    throw new Error('Query non consentita: una sola istruzione SQL per chiamata');
+  }
+
+  for (const statement of executable) {
     const cleaned = stripSqlComments(statement).trim();
     if (!cleaned) continue;
 
@@ -351,9 +359,13 @@ export async function findObjects(pattern, types) {
 
 export async function runQuery(sql) {
   assertReadOnlySql(sql);
+  const statement = splitSqlStatements(sql).find((s) => stripSqlComments(s).trim());
+  if (!statement) {
+    throw new Error('SQL vuoto non consentito');
+  }
 
   if (usePgDriver() && sharedPg) {
-    const raw = await pgRunQuery(sharedPg, sql);
+    const raw = await pgRunQuery(sharedPg, statement, { timeoutMs: DEFAULT_TIMEOUT_MS });
     return truncateForModel(raw);
   }
 
