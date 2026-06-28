@@ -27,8 +27,7 @@ Prerequisiti:
   - Rete Docker esterna "postgres" con container DB
   - File .env.production (da .env.production.example; stesse chiavi di .env.example)
   - db/bootstrap/03_pgvector.sql + db/migrations/released/regolamento_chunks.sql
-  - cd server && npm run index-regolamento (dopo migration pgvector)
-  - server/dist/main.js (rigenerato da deploy.sh con npm run build --prefix server)
+  - cd server && npm run index-regolamento (dopo migration pgvector; richiede Node in dev)
   - Caddy: blocco dimmelo.marcomeini.it → 127.0.0.1:8080 (vedi docker/caddy-dimmelo.snippet)
 
 Variabili ambiente:
@@ -130,14 +129,6 @@ fi
 
 "${DOCKER[@]}" network inspect postgres >/dev/null 2>&1 \
   || die "Rete Docker 'postgres' non trovata — creala e collega il container Postgres"
-
-[[ -f server/dist/main.js ]] \
-  || die "Manca server/dist/main.js — compila con: npm run build --prefix server"
-
-log "Build server (dist)…"
-if ! npm run build --prefix server; then
-  die "npm run build --prefix server fallito"
-fi
 
 log "Regolamento RAG: assicurati che pgvector sia abilitato e l'indice popolato:"
 log "  psql ... -f db/bootstrap/03_pgvector.sql"
