@@ -1,5 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import type { AppConfig } from '../../config.js';
 import { findDimmeloUserByEmail, normalizeEmail } from '../dimmelo-users.js';
 import type { PgClientManager } from '../pg-client-manager.js';
@@ -7,6 +7,23 @@ import type { PgClientManager } from '../pg-client-manager.js';
 export { normalizeEmail };
 
 export const SESSION_COOKIE_NAME = 'palio_session';
+export const OAUTH_STATE_MOBILE = 'mobile';
+
+/** Session JWT from cookie or `Authorization: Bearer`. */
+export function extractSessionToken(req: Request): string | undefined {
+  const cookieToken = req.cookies?.[SESSION_COOKIE_NAME];
+  if (typeof cookieToken === 'string' && cookieToken.trim()) {
+    return cookieToken.trim();
+  }
+
+  const header = req.headers.authorization;
+  if (typeof header === 'string') {
+    const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+    if (match?.[1]?.trim()) return match[1].trim();
+  }
+
+  return undefined;
+}
 
 export function maskEmailForDisplay(email: string): string {
   const normalized = normalizeEmail(email);
@@ -105,7 +122,10 @@ export function hasGoogleOAuthCredentials(google: AppConfig['auth']['google'] | 
   return true;
 }
 
-export function buildGoogleAuthUrl(auth: AppConfig['auth']): string {
+export function buildGoogleAuthUrl(
+  auth: AppConfig['auth'],
+  options: { state?: string } = {},
+): string {
   const redirectUri = `${auth.publicApiUrl.replace(/\/$/, '')}/api/auth/google/callback`;
   const params = new URLSearchParams({
     client_id: auth.google.clientId,
@@ -115,7 +135,20 @@ export function buildGoogleAuthUrl(auth: AppConfig['auth']): string {
     access_type: 'online',
     prompt: 'select_account',
   });
+  if (options.state) params.set('state', options.state);
   return `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+}
+
+export function buildMobileAuthRedirect(
+  mobileRedirectUri: string,
+  params: Record<string, string>,
+): string {
+  const base = mobileRedirectUri.replace(/\/$/, '');
+  const url = new URL(base.includes('://') ? base : `https://${base}`);
+  for (const [key, value] of Object.entries(params)) {
+    url.searchParams.set(key, value);
+  }
+  return url.toString();
 }
 
 export async function exchangeGoogleCode(

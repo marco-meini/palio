@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from 'express';
 import type { Environment } from '../../environment.js';
-import { resolveAuthorizedUser, SESSION_COOKIE_NAME } from './session.js';
+import { extractSessionToken, resolveAuthorizedUser } from './session.js';
 
 export function createRequireAuth(env: Environment) {
   const { auth } = env.config;
@@ -12,7 +12,7 @@ export function createRequireAuth(env: Environment) {
       return;
     }
 
-    const token = req.cookies?.[SESSION_COOKIE_NAME];
+    const token = extractSessionToken(req);
     const user = await resolveAuthorizedUser(pg, token, auth);
     if (!user) {
       res.status(401).send({ error: 'Autenticazione richiesta' });

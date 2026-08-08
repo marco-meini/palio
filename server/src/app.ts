@@ -18,11 +18,11 @@ export class App {
   async init(): Promise<void> {
     await this.env.init();
 
-    const { corsOrigin } = this.env.config.server;
+    const { corsOrigins } = this.env.config.server;
 
     this.express.use(
       cors({
-        origin: corsOrigin,
+        origin: corsOrigins.length === 1 ? corsOrigins[0] : corsOrigins,
         methods: ['GET', 'POST', 'OPTIONS'],
         credentials: true,
       }),

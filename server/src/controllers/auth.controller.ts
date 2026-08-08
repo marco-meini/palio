@@ -2,15 +2,17 @@ import type { Request, Response } from 'express';
 import { Abstract_Controller } from './abstract.controller.js';
 import {
   buildGoogleAuthUrl,
+  buildMobileAuthRedirect,
   clearSessionCookie,
   createSessionToken,
   exchangeGoogleCode,
+  extractSessionToken,
   fetchGoogleUserInfo,
   hasGoogleOAuthCredentials,
   maskEmailForDisplay,
   normalizeEmail,
+  OAUTH_STATE_MOBILE,
   resolveAuthorizedUser,
-  SESSION_COOKIE_NAME,
   setSessionCookie,
 } from '../lib/auth/session.js';
 import { findDimmeloUserByEmail } from '../lib/dimmelo-users.js';
@@ -48,6 +50,30 @@ export class AuthController extends Abstract_Controller {
     }
   }
 
+  private isMobileOAuth(req: Request): boolean {
+    if (req.query.client === 'mobile') return true;
+    return req.query.state === OAUTH_STATE_MOBILE;
+  }
+
+  private redirectOAuthError(
+    res: Response,
+    auth: import('../config.js').AppConfig['auth'],
+    isMobile: boolean,
+    error: string,
+    extra: Record<string, string> = {},
+  ): void {
+    if (isMobile) {
+      res.redirect(buildMobileAuthRedirect(auth.mobileRedirectUri, { error, ...extra }));
+      return;
+    }
+    const errorUrl = new URL('/login', auth.publicAppUrl);
+    errorUrl.searchParams.set('error', error);
+    for (const [key, value] of Object.entries(extra)) {
+      errorUrl.searchParams.set(key, value);
+    }
+    res.redirect(errorUrl.toString());
+  }
+
   private async getMe(req: Request, res: Response): Promise<void> {
     const { auth } = this.env.config;
     if (!auth?.enabled) {
@@ -55,7 +81,7 @@ export class AuthController extends Abstract_Controller {
       return;
     }
 
-    const token = req.cookies?.[SESSION_COOKIE_NAME];
+    const token = extractSessionToken(req);
     const user = await resolveAuthorizedUser(this.env.pgConnection, token, auth);
     if (!user) {
       res.status(401).send({ error: 'Non autenticato' });
@@ -74,7 +100,7 @@ export class AuthController extends Abstract_Controller {
     res.send({ ok: true });
   }
 
-  private async getGoogle(_req: Request, res: Response): Promise<void> {
+  private async getGoogle(req: Request, res: Response): Promise<void> {
     const { auth } = this.env.config;
     if (!auth?.enabled) {
       res.status(404).send({ error: 'Auth disabilitata' });
@@ -89,7 +115,10 @@ export class AuthController extends Abstract_Controller {
       return;
     }
 
-    res.redirect(buildGoogleAuthUrl(auth));
+    const isMobile = this.isMobileOAuth(req);
+    res.redirect(
+      buildGoogleAuthUrl(auth, isMobile ? { state: OAUTH_STATE_MOBILE } : {}),
+    );
   }
 
   private async getGoogleCallback(req: Request, res: Response): Promise<void> {
@@ -107,11 +136,10 @@ export class AuthController extends Abstract_Controller {
       return;
     }
 
+    const isMobile = this.isMobileOAuth(req);
     const code = typeof req.query.code === 'string' ? req.query.code : '';
     if (!code) {
-      const errorUrl = new URL('/login', auth.publicAppUrl);
-      errorUrl.searchParams.set('error', 'oauth_failed');
-      res.redirect(errorUrl.toString());
+      this.redirectOAuthError(res, auth, isMobile, 'oauth_failed');
       return;
     }
 
@@ -124,10 +152,7 @@ export class AuthController extends Abstract_Controller {
       if (!row) {
         const masked = maskEmailForDisplay(email);
         console.warn(`Google login denied: email not in dimmelo_users (${masked || 'missing'})`);
-        const deniedUrl = new URL('/login', auth.publicAppUrl);
-        deniedUrl.searchParams.set('error', 'access_denied');
-        if (masked) deniedUrl.searchParams.set('email', masked);
-        res.redirect(deniedUrl.toString());
+        this.redirectOAuthError(res, auth, isMobile, 'access_denied', masked ? { email: masked } : {});
         return;
       }
 
@@ -137,12 +162,16 @@ export class AuthController extends Abstract_Controller {
         auth.sessionTtlSeconds,
       );
       setSessionCookie(res, auth, sessionToken);
+
+      if (isMobile) {
+        res.redirect(buildMobileAuthRedirect(auth.mobileRedirectUri, { token: sessionToken }));
+        return;
+      }
+
       res.redirect(auth.publicAppUrl);
     } catch (err) {
       console.error('Google OAuth callback failed', err);
-      const errorUrl = new URL('/login', auth.publicAppUrl);
-      errorUrl.searchParams.set('error', 'oauth_failed');
-      res.redirect(errorUrl.toString());
+      this.redirectOAuthError(res, auth, isMobile, 'oauth_failed');
     }
   }
 }

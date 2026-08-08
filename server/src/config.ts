@@ -23,7 +23,8 @@ export interface AppConfig {
   };
   server: {
     port: number;
-    corsOrigin: string;
+    /** Allowed CORS origins (comma-separated CORS_ORIGIN). */
+    corsOrigins: string[];
   };
   auth: {
     enabled: boolean;
@@ -35,6 +36,8 @@ export interface AppConfig {
     };
     publicApiUrl: string;
     publicAppUrl: string;
+    /** Deep-link base for mobile OAuth success/error (e.g. dimmelo://auth). */
+    mobileRedirectUri: string;
   };
   /** Fallback skill Postgres CLI (se il driver pg non è disponibile). */
   postgres: {
@@ -62,6 +65,15 @@ function envString(raw: string | undefined, defaultValue = ''): string {
   return raw;
 }
 
+function envCsv(raw: string | undefined, defaultValue: string[]): string[] {
+  const value = envString(raw);
+  if (!value) return defaultValue;
+  return value
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 function buildConfigFromEnv(): AppConfig {
   const googleOAuthPath =
     process.env.GOOGLE_OAUTH_JSON_PATH ??
@@ -86,7 +98,10 @@ function buildConfigFromEnv(): AppConfig {
     },
     server: {
       port: envInt(process.env.SERVER_PORT, 3001),
-      corsOrigin: envString(process.env.CORS_ORIGIN, 'http://localhost:4200'),
+      corsOrigins: envCsv(process.env.CORS_ORIGIN, [
+        'http://localhost:4200',
+        'http://localhost:8081',
+      ]),
     },
     auth: {
       enabled: envBool(process.env.AUTH_ENABLED, false),
@@ -95,6 +110,7 @@ function buildConfigFromEnv(): AppConfig {
       google: mergeGoogleOAuthCredentials(undefined, googleOAuthPath),
       publicApiUrl: envString(process.env.AUTH_PUBLIC_API_URL, 'http://localhost:3001'),
       publicAppUrl: envString(process.env.AUTH_PUBLIC_APP_URL, 'http://localhost:4200'),
+      mobileRedirectUri: envString(process.env.AUTH_MOBILE_REDIRECT_URI, 'dimmelo://auth'),
     },
     postgres: {
       cli: envString(
