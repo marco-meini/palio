@@ -16,6 +16,9 @@ test('buildChatSystemPrompt — documenta anagrafiche dirigenze e JOIN obbligato
   assert.match(prompt, /JOIN capitani cap ON cap\.id = pp\.capitano_id/);
   assert.match(prompt, /palii_by_person/);
   assert.match(prompt, /Mai.*cercare nomi di persone/i);
+  assert.match(prompt, /Alias obbligatori/);
+  assert.match(prompt, /pp\.canape/);
+  assert.match(prompt, /palii_by_person.*contrada/i);
 });
 
 test('DOMAIN_SCHEMA e DOMAIN_FK_JOINS — coerenti con palio_partecipazione_mangini', () => {

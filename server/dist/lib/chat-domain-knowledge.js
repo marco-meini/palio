@@ -41,6 +41,7 @@ palio_partecipazione_mangini(
 export const DOMAIN_FK_JOINS = `Relazioni FK — regola fondamentale:
 - **Mai** cercare nomi di persone filtrando colonne di \`palio_partecipazioni\`: lì ci sono solo ID numerici (*_id) o testo libero (cavallo_preso_da, proprietario_cavallo).
 - Per ogni \`*_id\` fai **JOIN** sulla tabella anagrafica e filtra su \`.nome\` (o su fantini.nome / fantini.soprannome).
+- **Alias obbligatori** (non inventarne altri): \`p\`=palii, \`pp\`=palio_partecipazioni, \`c\`=contrade, \`ca\`=cavalli, \`f\`=fantini, \`cap\`=capitani, \`pri\`=priori, \`bar\`=barbareschi, \`m\`=mangini, \`ec\`=contrade (estratta_da). Colonne di edizione → \`p.*\`; colonne di partecipazione (\`canape\`, \`ordine_arrivo\`, \`vincitrice\`, …) → \`pp.*\`.
 
 | Colonna in palio_partecipazioni | Tabella da JOINare | Filtro nome tipico |
 |--------------------------------|--------------------|--------------------|
@@ -64,6 +65,19 @@ WHERE cap.nome ILIKE '%Zalaffi%' AND c.name ILIKE '%Chiocciola%'
 ORDER BY p.data_palio
 \`\`\`
 
+Esempio — partecipazioni di un fantino in una contrada (canape/arrivo; non usare alias inventati):
+\`\`\`sql
+SELECT p.data_palio, ca.nome AS cavallo, pp.canape, pp.ordine_arrivo, pp.vincitrice
+FROM palio_partecipazioni pp
+JOIN palii p ON p.id = pp.palio_id
+JOIN contrade c ON c.id = pp.contrada_id
+JOIN fantini f ON f.id = pp.fantino_id
+JOIN cavalli ca ON ca.id = pp.cavallo_id
+WHERE c.name ILIKE '%Aquila%'
+  AND (f.soprannome ILIKE '%Tittia%' OR f.nome ILIKE '%Tittia%')
+ORDER BY p.data_palio
+\`\`\`
+
 Prima di concludere che un dato «non c'è», verifica di aver JOINato la tabella anagrafica corretta per il ruolo cercato.`;
 export const DOMAIN_STRATEGY = `Strategia (risparmio token — segui nell'ordine):
 0. Se la domanda riguarda **regole, regolamento, procedimenti ufficiali** del Palio:
@@ -80,8 +94,8 @@ export const DOMAIN_STRATEGY = `Strategia (risparmio token — segui nell'ordine
    - contrada_win_totals: classifica vittorie per contrada (opz. year_from, year_to, limit)
    - wins_by_fantino: palii vinti da un fantino (param person; opz. year_from, year_to)
    - wins_by_horse: palii vinti con un cavallo (param horse; opz. year_from, year_to)
-2. Domande su **capitano, priore, barbaresco, mangini, fantino** per nome → preferisci palii_by_person; altrimenti SQL con JOIN obbligatorio (vedi relazioni FK).
-3. Altrimenti usa **una sola** run_readonly_sql con SELECT mirato, JOIN necessari e LIMIT adeguato.
+2. Domande su **capitano, priore, barbaresco, mangini, fantino** per nome (anche filtrate per contrada) → preferisci **palii_by_person** (param person; opz. role, contrada). Non scrivere SQL libero se la ricetta basta.
+3. Altrimenti usa **una sola** run_readonly_sql con SELECT mirato, JOIN necessari, alias canonici (p/pp/c/ca/f/…) e LIMIT adeguato.
 4. Non usare get_schema né search_schema salvo se manca una colonna/tabella indispensabile.`;
 export const DOMAIN_RESPONSE_RULES = `Regole risposta:
 - Non inventare dati.

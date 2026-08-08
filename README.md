@@ -144,7 +144,8 @@ In Docker il backend usa **`DATABASE_URL`** da `.env.production`. In dev: `.env`
 
 - `AUTH_PUBLIC_APP_URL` e `AUTH_PUBLIC_API_URL` = `https://dimmelo.marcomeini.it` (stesso host; il FE nginx inoltra `/api` al BE).
 - `CORS_ORIGIN` = stesso URL.
-- Non esporre Postgres (`5432`) su Internet; solo rete Docker `postgres`.
+- Non esporre Postgres su Internet. Binding host: **`127.0.0.1:9634→5432`** (rete Docker `postgres` per l’app). Dettagli e runbook: [`docker/harden-postgres.md`](docker/harden-postgres.md).
+- Dev locale verso il DB sul VPS: tunnel SSH [`docker/ssh-tunnel-db.sh`](docker/ssh-tunnel-db.sh), poi `DATABASE_URL` / skill profile su `127.0.0.1:9634`.
 
 Route auth:
 
