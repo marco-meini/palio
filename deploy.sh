@@ -8,19 +8,28 @@ cd "$ROOT"
 
 SKIP_BUILD=false
 SKIP_HEALTH=false
+VERSION_ARG=""
 HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:8080/api/health}"
 HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 
 usage() {
   cat <<'EOF'
-Uso: ./deploy.sh [opzioni]
+Uso: ./deploy.sh --version <tag> [opzioni]
 
 Deploy completo dell'app Dimmelo (docker compose: backend + frontend).
+Le immagini vengono taggate come palio-server:<tag> e palio-client:<tag>.
+
+Obbligatorio:
+  -v, --version <tag>  versione/tag delle immagini Docker (es. 1.2.0, 2026-08-08)
 
 Opzioni:
-  --skip-build   solo docker compose up -d (senza --build)
-  --skip-health  non attendere /api/health
-  -h, --help     mostra questo messaggio
+  --skip-build         solo docker compose up -d (senza --build), usando --version
+  --skip-health        non attendere /api/health
+  -h, --help           mostra questo messaggio
+
+Esempi:
+  ./deploy.sh --version 1.2.0
+  ./deploy.sh -v 1.2.0 --skip-build
 
 Prerequisiti:
   - Docker e Docker Compose
@@ -33,6 +42,7 @@ Prerequisiti:
 Variabili ambiente:
   HEALTH_URL      URL health check (default: http://127.0.0.1:8080/api/health)
   HEALTH_RETRIES  tentativi health check (default: 30)
+  IMAGE_TAG       alternativa a --version (se entrambi, vince --version)
 EOF
 }
 
@@ -93,6 +103,11 @@ require_env() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    -v|--version)
+      [[ $# -ge 2 ]] || die "--version richiede un valore (es. --version 1.2.0)"
+      VERSION_ARG="$2"
+      shift 2
+      ;;
     --skip-build) SKIP_BUILD=true; shift ;;
     --skip-health) SKIP_HEALTH=true; shift ;;
     -h|--help) usage; exit 0 ;;
@@ -100,7 +115,18 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# CLI ha priorità su IMAGE_TAG già esportato dall'ambiente.
+IMAGE_TAG="${VERSION_ARG:-${IMAGE_TAG:-}}"
+if [[ -z "$IMAGE_TAG" ]]; then
+  die "Specifica la versione immagini: ./deploy.sh --version <tag> (es. 1.2.0)"
+fi
+if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+  die "Tag non valido: '${IMAGE_TAG}' (usa solo lettere, numeri, . _ -)"
+fi
+export IMAGE_TAG
+
 log "Verifica prerequisiti…"
+log "IMAGE_TAG=${IMAGE_TAG}"
 
 command -v docker >/dev/null 2>&1 || die "docker non trovato"
 init_docker
@@ -141,10 +167,10 @@ log "git pull…"
 git pull --ff-only
 
 if $SKIP_BUILD; then
-  log "Avvio container (senza rebuild)…"
+  log "Avvio container (senza rebuild) — immagini :${IMAGE_TAG}…"
   docker_compose up -d
 else
-  log "Build immagini e avvio container…"
+  log "Build immagini :${IMAGE_TAG} e avvio container…"
   docker_compose up -d --build
 fi
 

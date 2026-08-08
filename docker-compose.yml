@@ -1,5 +1,6 @@
 services:
   server:
+    image: palio-server:${IMAGE_TAG:-latest}
     build:
       context: ./server
     env_file:
@@ -10,6 +11,7 @@ services:
       - dimmelo
 
   client:
+    image: palio-client:${IMAGE_TAG:-latest}
     build:
       context: ./client
     depends_on:

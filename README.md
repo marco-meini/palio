@@ -129,7 +129,7 @@ Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, conta
 4. Avvia stack (FE su `127.0.0.1:8080`, BE solo rete interna):
    ```bash
    chmod +x deploy.sh
-   ./deploy.sh
+   ./deploy.sh --version 1.2.0
    ```
    Lo script esegue sempre `git pull` prima del build. Opzioni: `--skip-build`, `--skip-health`.
 5. Caddy — al primo deploy aggiungi il blocco in [`docker/caddy-dimmelo.snippet`](docker/caddy-dimmelo.snippet) a `/etc/caddy/Caddyfile` (con sudo). `./deploy.sh` ricarica Caddy automaticamente (`sudo systemctl reload caddy`) a ogni run.
