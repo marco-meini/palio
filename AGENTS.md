@@ -129,6 +129,14 @@ Prima di alterare schema: leggere CHANGELOG e colonne domain-specific sopra; non
 - Non commitare `.env`, `google-oauth.json`, dump con dati sensibili
 - `AUTH_ENABLED=true` in produzione; health pubblico, chat protetta
 
+### VPS — divieto assoluto senza richiesta esplicita
+
+**NON eseguire MAI azioni sul VPS** (SSH, `scp`, `rsync`, `git pull`/`reset` remoto, `docker compose`, `deploy.sh`, modifica `.env.production`, restart container, ecc.) **a meno che l’utente non lo chieda esplicitamente in quel messaggio**.
+
+- Un log di errore da un terminale SSH, un paste di `git pull` fallito, o “guarda questo errore” **non** sono un’autorizzazione a intervenire sul server.
+- In quei casi: spiegare la causa e proporre i comandi da far girare **all’utente**; non lanciarli tu sul VPS.
+- Vale anche se in chat precedenti hai già avuto accesso SSH o hai deployato: ogni volta serve il via libera esplicito.
+
 ---
 
 ## Skill e quando usarle
@@ -150,6 +158,7 @@ Per scrape: seguire la skill (non reinventare CLI o URL).
 4. **Lingua**: messaggi UI/API verso utente in italiano; codice/identifier in inglese (o termini di dominio italiani già consolidati: `canape`, `contrade`, `palii`)
 5. **Commit/PR**: solo se richiesti esplicitamente dall’utente
 6. **Segreti**: mai loggare API key, session secret, password DB
+7. **VPS**: nessuna azione sul server di produzione senza richiesta esplicita (vedi sezione Env e deploy)
 
 ## Anti-pattern
 
@@ -159,3 +168,4 @@ Per scrape: seguire la skill (non reinventare CLI o URL).
 - Nuovi componenti Angular non-standalone o NgModule legacy
 - Migration applicate “a mano” senza aggiornare CHANGELOG / released quando si rilascia
 - Hardcoded URL produzione nel client al posto di env/proxy
+- SSH / deploy / git / docker sul VPS “per aiutare” senza che l’utente l’abbia chiesto nero su bianco
