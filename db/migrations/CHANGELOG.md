@@ -1,5 +1,11 @@
 ## WIP
 
+### contrada_rivalita.sql
+- `contrada_rivalita` — periodi di rivalità tra due contrade (`contrada_id`, `rivale_id` con `contrada_id < rivale_id`, `data_inizio`, `data_fine`)
+- Precisione annuale da ilpalio (`?rivalita`): inizio = 1 gen, fine = 31 dic; `data_fine` NULL = ancora in corso; `data_inizio` NULL = solo «fino al YYYY»
+- Scraper: `cd server && npm run scrape:rivalita` (`server/src/tasks/scrape-contrade-rivalita.ts`)
+- Grant `SELECT` a `palio_chat_ro` se il ruolo esiste
+
 ### regolamento_chunks.sql
 - `regolamento_chunks` — chunk testo regolamento + embedding `vector(384)` (modello e5-small)
 - Richiede estensione `vector` ([`db/bootstrap/03_pgvector.sql`](../bootstrap/03_pgvector.sql) come superuser)
@@ -11,6 +17,7 @@
 ### palio_chat_ro.sql
 - Ruolo `palio_chat_ro` (LOGIN) con `SELECT` sulle tabelle Palio per chat e MCP sidecar
 - Configurare `CHAT_DATABASE_URL` o profile `chat_ro` in `.skills/postgres/config.toml` (password via `CHAT_DB_PASSWORD` / `POSTGRES_PASSWORD`)
+- Include `contrada_rivalita` tra le tabelle in SELECT
 
 ### prerelease.sql
 - `palii`, anagrafiche, `palio_partecipazioni` con colonna **`canape`** (1–9 posto canape, **10** = rincorsa `R`)

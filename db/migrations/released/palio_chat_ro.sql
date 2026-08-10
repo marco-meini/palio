@@ -25,7 +25,8 @@ GRANT SELECT ON TABLE
   barbareschi,
   priori,
   palio_partecipazioni,
-  palio_partecipazione_mangini
+  palio_partecipazione_mangini,
+  contrada_rivalita
 TO palio_chat_ro;
 
 COMMIT;

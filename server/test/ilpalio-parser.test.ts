@@ -7,10 +7,46 @@ import {
   normalizeContradaCode,
   parseDirigenze,
   parseOrdineArrivo,
+  parseRivalita,
+  parseRivalitaYearText,
 } from '../src/lib/ilpalio-parser.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => readFileSync(join(__dirname, 'fixtures', name), 'utf8');
+
+test('parseRivalitaYearText — pattern dal / fino / poi', () => {
+  assert.deepEqual(parseRivalitaYearText('(dal 1947)'), [
+    { dataInizio: '1947-01-01', dataFine: null },
+  ]);
+  assert.deepEqual(parseRivalitaYearText('(dal 1730 al 1947)'), [
+    { dataInizio: '1730-01-01', dataFine: '1947-12-31' },
+  ]);
+  assert.deepEqual(parseRivalitaYearText('(fino al 1786, poi dal 1952)'), [
+    { dataInizio: null, dataFine: '1786-12-31' },
+    { dataInizio: '1952-01-01', dataFine: null },
+  ]);
+});
+
+test('parseRivalita — Aquila vs Pantera dal 1947', () => {
+  const rows = parseRivalita(fixture('rivalita-aquila.html'));
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].rivaleCode, 'PA');
+  assert.equal(rows[0].dataInizio, '1947-01-01');
+  assert.equal(rows[0].dataFine, null);
+});
+
+test('parseRivalita — Nicchio vs Valdimontone due periodi', () => {
+  const rows = parseRivalita(fixture('rivalita-nicchio.html'));
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((r) => r.rivaleCode === 'VA'));
+  assert.deepEqual(
+    rows.map((r) => ({ dataInizio: r.dataInizio, dataFine: r.dataFine })),
+    [
+      { dataInizio: null, dataFine: '1786-12-31' },
+      { dataInizio: '1952-01-01', dataFine: null },
+    ],
+  );
+});
 
 test('parseDirigenze — Palio 202507020', () => {
   const html = fixture('dirigenze-202507020.html');

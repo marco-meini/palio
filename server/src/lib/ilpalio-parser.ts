@@ -28,6 +28,116 @@ export function dirigenzeUrl(sourceCode) {
   return `${BASE}/5/Palio/${sourceCode}/dirigenze`;
 }
 
+/** Pagina alleanze/rivalità di una contrada (code AQ… o nome Aquila). */
+export function rivalitaUrl(codeOrName) {
+  const slug = String(codeOrName || '').trim();
+  if (!slug) throw new Error('rivalitaUrl: missing contrada code or name');
+  return `${BASE}/5/Contrade/${encodeURIComponent(slug)}?rivalita&lang=it`;
+}
+
+/**
+ * Precisione annuale dal sito → date ISO.
+ * @returns {{ dataInizio: string|null, dataFine: string|null }[]}
+ */
+export function parseRivalitaYearText(text) {
+  const raw = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!raw) return [];
+
+  const periods = [];
+  const chunks = raw.split(/\bpoi\b/i);
+  for (const chunk of chunks) {
+    const dalAl = chunk.match(/dal\s+(\d{4})\s+al\s+(\d{4})/i);
+    if (dalAl) {
+      periods.push({
+        dataInizio: `${dalAl[1]}-01-01`,
+        dataFine: `${dalAl[2]}-12-31`,
+      });
+      continue;
+    }
+    const fino = chunk.match(/fino\s+al\s+(\d{4})/i);
+    if (fino) {
+      periods.push({
+        dataInizio: null,
+        dataFine: `${fino[1]}-12-31`,
+      });
+      continue;
+    }
+    const dal = chunk.match(/dal\s+(\d{4})/i);
+    if (dal) {
+      periods.push({
+        dataInizio: `${dal[1]}-01-01`,
+        dataFine: null,
+      });
+    }
+  }
+  return periods;
+}
+
+/**
+ * Solo blocco InfoBox «Rivalità» (ignora Alleanze e narrazione).
+ * @returns {{ rivaleCode: string, dataInizio: string|null, dataFine: string|null }[]}
+ */
+export function parseRivalita(html) {
+  const $ = cheerio.load(html);
+  const box = $('.Corniciato.InfoBox')
+    .filter((_, el) => {
+      const title = $(el).find('.Grande').first().text().replace(/\s+/g, '');
+      return /Rivalit/i.test(title);
+    })
+    .first();
+
+  if (!box.length) return [];
+
+  const results = [];
+  const $p = box.find('p').first();
+  const nodes = $p.contents().toArray();
+
+  let i = 0;
+  while (i < nodes.length) {
+    const node = nodes[i];
+    if (node.type === 'tag' && node.name === 'a') {
+      const href = $(node).attr('href') || '';
+      const m = href.match(/\/Contrade\/([A-Za-z]+)/i);
+      if (m) {
+        const rivaleCode = normalizeContradaCode(m[1]);
+        let periodText = '';
+        let j = i + 1;
+        while (j < nodes.length) {
+          const n = nodes[j];
+          if (n.type === 'tag' && n.name === 'br') break;
+          if (n.type === 'tag' && n.name === 'a') {
+            const h = $(n).attr('href') || '';
+            if (/\/Contrade\//i.test(h)) break;
+            periodText += $(n).text();
+          } else if (n.type === 'text') {
+            periodText += n.data || '';
+          } else if (n.type === 'tag') {
+            periodText += $(n).text();
+          }
+          j += 1;
+        }
+        const periods = parseRivalitaYearText(periodText);
+        if (periods.length === 0) {
+          results.push({ rivaleCode, dataInizio: null, dataFine: null });
+        } else {
+          for (const p of periods) {
+            results.push({
+              rivaleCode,
+              dataInizio: p.dataInizio,
+              dataFine: p.dataFine,
+            });
+          }
+        }
+        i = j;
+        continue;
+      }
+    }
+    i += 1;
+  }
+
+  return results;
+}
+
 export function isEstrattaDaSindaco(label) {
   return /^sindaco$/i.test(String(label || '').trim());
 }

@@ -9,7 +9,8 @@ export type RecipeName =
   | 'palii_by_person'
   | 'contrada_win_totals'
   | 'wins_by_fantino'
-  | 'wins_by_horse';
+  | 'wins_by_horse'
+  | 'rivalita_contrada';
 
 export const RECIPE_NAMES = [
   'same_horse_consecutive_cross_year',
@@ -20,6 +21,7 @@ export const RECIPE_NAMES = [
   'contrada_win_totals',
   'wins_by_fantino',
   'wins_by_horse',
+  'rivalita_contrada',
 ] as const satisfies readonly RecipeName[];
 
 /** @deprecated Use RECIPE_NAMES — alias per compatibilità */
@@ -481,6 +483,43 @@ LEFT JOIN fantini f ON f.id = pp.fantino_id
 WHERE pp.vincitrice
   AND ca.nome ILIKE ${pattern}${yearFilters(params)}
 ORDER BY p.data_palio DESC, p.id DESC
+`.trim();
+    },
+  },
+
+  rivalita_contrada: {
+    description:
+      'Rivalità storiche di una contrada (periodi data_inizio/data_fine; data_fine NULL = in corso)',
+    validate(params) {
+      contradaFilter(params);
+    },
+    buildSql(params) {
+      // Match either side of undirected pair; expose the "other" as rivale.
+      let idOrNameSql;
+      if (params.contrada_id != null) {
+        idOrNameSql = `c_q.id = ${assertInt(params.contrada_id, 'contrada_id')}`;
+      } else {
+        const raw = params.contrada ?? params.contrada_name;
+        if (typeof raw === 'number' || (typeof raw === 'string' && /^\d+$/.test(String(raw).trim()))) {
+          idOrNameSql = `c_q.id = ${assertInt(raw, 'contrada')}`;
+        } else {
+          idOrNameSql = `c_q.name ILIKE ${sqlQuote(assertString(raw, 'contrada'))}`;
+        }
+      }
+      return `
+SELECT
+  c_q.name AS contrada,
+  CASE WHEN cr.contrada_id = c_q.id THEN c2.name ELSE c1.name END AS rivale,
+  cr.data_inizio,
+  cr.data_fine,
+  (cr.data_fine IS NULL) AS in_corso
+FROM contrade c_q
+JOIN contrada_rivalita cr
+  ON cr.contrada_id = c_q.id OR cr.rivale_id = c_q.id
+JOIN contrade c1 ON c1.id = cr.contrada_id
+JOIN contrade c2 ON c2.id = cr.rivale_id
+WHERE ${idOrNameSql}
+ORDER BY cr.data_inizio NULLS FIRST, rivale
 `.trim();
     },
   },

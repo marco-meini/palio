@@ -9,7 +9,8 @@ export const DOMAIN_TERMINOLOGY = `Terminologia e convenzioni (rispetta sempre n
 - **ordine_assegnazione**: ordine con cui è stato assegnato a sorte il cavallo nel giorno della tratta.
 - **orecchio** (1–10): numero dato al cavallo per l'assegnazione in tratta.
 - **coscia** (1–N, N = cavalli presentati): numero per le batterie di selezione; l'orecchio segue l'ordine delle coscie scelte (es. coscia 4→orecchio 1, 9→2, 12→3, 13→4…).
-- **cavallo_preso_da**: contradaiolo che, vestendo i costumi di contrada (la **montura**), va a prendere il cavallo: «si è monturato», «si è vestito», «ha portato il cavallo».`;
+- **cavallo_preso_da**: contradaiolo che, vestendo i costumi di contrada (la **montura**), va a prendere il cavallo: «si è monturato», «si è vestito», «ha portato il cavallo».
+- **Rivalità tra contrade**: tabella \`contrada_rivalita\` (coppia non orientata: \`contrada_id < rivale_id\`). Periodi storici con \`data_inizio\` / \`data_fine\` a **precisione annuale** (1 gen / 31 dic dal sito). \`data_fine IS NULL\` = rivalità ancora in corso; \`data_inizio IS NULL\` = il sito indica solo «fino al YYYY». Più righe per la stessa coppia = periodi distinti (es. Nicchio–Valdimontone). Non confondere con alleanze (non in DB).`;
 
 export const DOMAIN_SCHEMA = `Schema PostgreSQL (tabelle e colonne principali):
 
@@ -39,12 +40,18 @@ palio_partecipazione_mangini(
   partecipazione_id → palio_partecipazioni.id,
   mangini_id → mangini.id,
   ordine
+)
+
+-- Rivalità storiche (coppia ordinata contrada_id < rivale_id; più periodi possibili)
+contrada_rivalita(
+  id, contrada_id → contrade.id, rivale_id → contrade.id,
+  data_inizio, data_fine
 )`;
 
 export const DOMAIN_FK_JOINS = `Relazioni FK — regola fondamentale:
 - **Mai** cercare nomi di persone filtrando colonne di \`palio_partecipazioni\`: lì ci sono solo ID numerici (*_id) o testo libero (cavallo_preso_da, proprietario_cavallo).
 - Per ogni \`*_id\` fai **JOIN** sulla tabella anagrafica e filtra su \`.nome\` (o su fantini.nome / fantini.soprannome).
-- **Alias obbligatori** (non inventarne altri): \`p\`=palii, \`pp\`=palio_partecipazioni, \`c\`=contrade, \`ca\`=cavalli, \`f\`=fantini, \`cap\`=capitani, \`pri\`=priori, \`bar\`=barbareschi, \`m\`=mangini, \`ec\`=contrade (estratta_da). Colonne di edizione → \`p.*\`; colonne di partecipazione (\`canape\`, \`ordine_arrivo\`, \`vincitrice\`, …) → \`pp.*\`.
+- **Alias obbligatori** (non inventarne altri): \`p\`=palii, \`pp\`=palio_partecipazioni, \`c\`=contrade, \`ca\`=cavalli, \`f\`=fantini, \`cap\`=capitani, \`pri\`=priori, \`bar\`=barbareschi, \`m\`=mangini, \`ec\`=contrade (estratta_da), \`cr\`=contrada_rivalita, \`c2\`=contrade (rivale). Colonne di edizione → \`p.*\`; colonne di partecipazione (\`canape\`, \`ordine_arrivo\`, \`vincitrice\`, …) → \`pp.*\`.
 
 | Colonna in palio_partecipazioni | Tabella da JOINare | Filtro nome tipico |
 |--------------------------------|--------------------|--------------------|
@@ -56,6 +63,16 @@ export const DOMAIN_FK_JOINS = `Relazioni FK — regola fondamentale:
 | contrada_id | contrade c ON c.id = pp.contrada_id | c.name ILIKE |
 | estratta_da_id | contrade ec ON ec.id = pp.estratta_da_id | ec.name ILIKE |
 | mangini (N:N) | palio_partecipazione_mangini ppm → mangini m | m.nome ILIKE |
+
+Rivalità — JOIN su entrambe le estremità (la coppia è non orientata):
+\`\`\`sql
+SELECT c.name AS contrada, c2.name AS rivale, cr.data_inizio, cr.data_fine
+FROM contrada_rivalita cr
+JOIN contrade c ON c.id = cr.contrada_id
+JOIN contrade c2 ON c2.id = cr.rivale_id
+WHERE c.name ILIKE '%Aquila%' OR c2.name ILIKE '%Aquila%'
+ORDER BY cr.data_inizio NULLS FIRST
+\`\`\`
 
 Esempio — palii in cui Roberto Zalaffi è stato capitano della Chiocciola:
 \`\`\`sql
@@ -98,7 +115,9 @@ export const DOMAIN_STRATEGY = `Strategia (risparmio token — segui nell'ordine
    - contrada_win_totals: classifica vittorie per contrada (opz. year_from, year_to, limit)
    - wins_by_fantino: palii vinti da un fantino (param person; opz. year_from, year_to)
    - wins_by_horse: palii vinti con un cavallo (param horse; opz. year_from, year_to)
+   - rivalita_contrada: rivalità storiche di una contrada (param contrada)
 2. Domande su **capitano, priore, barbaresco, mangini, fantino** per nome (anche filtrate per contrada) → preferisci **palii_by_person** (param person; opz. role, contrada). Non scrivere SQL libero se la ricetta basta.
+2b. Domande su **rivalità / rivale / nemica** tra contrade → **rivalita_contrada**.
 3. Altrimenti usa **una sola** run_readonly_sql con SELECT mirato, JOIN necessari, alias canonici (p/pp/c/ca/f/…) e LIMIT adeguato.
 4. Non usare get_schema né search_schema salvo se manca una colonna/tabella indispensabile.`;
 

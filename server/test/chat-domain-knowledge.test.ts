@@ -25,3 +25,11 @@ test('DOMAIN_SCHEMA e DOMAIN_FK_JOINS — coerenti con palio_partecipazione_mang
   assert.match(DOMAIN_SCHEMA, /palio_partecipazione_mangini/);
   assert.match(DOMAIN_FK_JOINS, /mangini \(N:N\)/);
 });
+
+test('buildChatSystemPrompt — documenta contrada_rivalita', () => {
+  const prompt = buildChatSystemPrompt();
+  assert.match(DOMAIN_SCHEMA, /contrada_rivalita/);
+  assert.match(prompt, /rivalita_contrada/);
+  assert.match(prompt, /data_fine IS NULL/);
+  assert.match(DOMAIN_FK_JOINS, /contrada_rivalita cr/);
+});

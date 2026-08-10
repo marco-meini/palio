@@ -140,9 +140,37 @@ ORDER BY pp.canape NULLS LAST;
 "
 ```
 
+## Rivalità contrade (task separato)
+
+Non fa parte del crawl Palio. Importa i periodi di rivalità da
+`/5/Contrade/{CODE}?rivalita&lang=it` (17 contrade) in `contrada_rivalita`.
+
+Prerequisito: migration [`db/migrations/contrada_rivalita.sql`](../../../db/migrations/contrada_rivalita.sql).
+
+```bash
+cd server
+npm run scrape:rivalita
+# oppure: npx tsx src/tasks/scrape-contrade-rivalita.ts --delay-ms 800
+```
+
+Idempotente (`DELETE` + reinsert). Default `--delay-ms 800`.
+
+Validazione:
+
+```bash
+"$POSTGRES_CLI" query run -c "
+SELECT c1.name AS contrada, c2.name AS rivale, r.data_inizio, r.data_fine
+FROM contrada_rivalita r
+JOIN contrade c1 ON c1.id = r.contrada_id
+JOIN contrade c2 ON c2.id = r.rivale_id
+ORDER BY c1.name, c2.name, r.data_inizio NULLS FIRST;
+"
+```
+
 ## Agent workflow
 
 1. Confirm DB migration and `cd server && npm install`.
 2. Choose single-Palio (`--source-code`) vs range (`--start`/`--source-code` + `--until-date` + `--max`).
 3. Run scraper; inspect stderr and final JSON.
 4. Run validation SQL; report counts and any `errors` array entries.
+5. Per rivalità: applicare `contrada_rivalita.sql` poi `npm run scrape:rivalita`.
