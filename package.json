@@ -1,6 +1,7 @@
 {
   "name": "palio",
   "private": true,
+  "version": "1.1.1",
   "scripts": {
     "dev:api": "npm run dev:api --prefix server",
     "dev:client": "npm run start --prefix client",

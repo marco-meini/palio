@@ -14,20 +14,19 @@ HEALTH_RETRIES="${HEALTH_RETRIES:-30}"
 
 usage() {
   cat <<'EOF'
-Uso: ./deploy.sh --version <tag> [opzioni]
+Uso: ./deploy.sh [opzioni]
 
 Deploy completo dell'app Dimmelo (docker compose: backend + frontend).
 Le immagini vengono taggate come palio-server:<tag> e palio-client:<tag>.
 
-Obbligatorio:
-  -v, --version <tag>  versione/tag delle immagini Docker (es. 1.2.0, 2026-08-08)
-
 Opzioni:
-  --skip-build         solo docker compose up -d (senza --build), usando --version
+  -v, --version <tag>  override del tag immagini (default: campo version in package.json)
+  --skip-build         solo docker compose up -d (senza --build), usando il tag
   --skip-health        non attendere /api/health
   -h, --help           mostra questo messaggio
 
 Esempi:
+  ./deploy.sh
   ./deploy.sh --version 1.2.0
   ./deploy.sh -v 1.2.0 --skip-build
 
@@ -42,7 +41,7 @@ Prerequisiti:
 Variabili ambiente:
   HEALTH_URL      URL health check (default: http://127.0.0.1:8080/api/health)
   HEALTH_RETRIES  tentativi health check (default: 30)
-  IMAGE_TAG       alternativa a --version (se entrambi, vince --version)
+  IMAGE_TAG       alternativa a --version (priorità: --version > IMAGE_TAG > package.json)
 EOF
 }
 
@@ -115,10 +114,32 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# CLI ha priorità su IMAGE_TAG già esportato dall'ambiente.
-IMAGE_TAG="${VERSION_ARG:-${IMAGE_TAG:-}}"
-if [[ -z "$IMAGE_TAG" ]]; then
-  die "Specifica la versione immagini: ./deploy.sh --version <tag> (es. 1.2.0)"
+# Priorità: --version > IMAGE_TAG env > package.json "version"
+package_version() {
+  local pkg="$ROOT/package.json"
+  [[ -f "$pkg" ]] || die "Manca package.json nella root del repo"
+  local ver=""
+  if command -v node >/dev/null 2>&1; then
+    ver="$(node -p "require('./package.json').version" 2>/dev/null || true)"
+  fi
+  if [[ -z "$ver" ]]; then
+    ver="$(sed -nE 's/^[[:space:]]*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$pkg" | head -n1)"
+  fi
+  [[ -n "$ver" ]] || die "Impossibile leggere version da package.json"
+  printf '%s' "$ver"
+}
+
+ENV_IMAGE_TAG="${IMAGE_TAG:-}"
+TAG_SOURCE=""
+if [[ -n "$VERSION_ARG" ]]; then
+  IMAGE_TAG="$VERSION_ARG"
+  TAG_SOURCE="--version"
+elif [[ -n "$ENV_IMAGE_TAG" ]]; then
+  IMAGE_TAG="$ENV_IMAGE_TAG"
+  TAG_SOURCE="env IMAGE_TAG"
+else
+  IMAGE_TAG="$(package_version)"
+  TAG_SOURCE="package.json"
 fi
 if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
   die "Tag non valido: '${IMAGE_TAG}' (usa solo lettere, numeri, . _ -)"
@@ -126,7 +147,7 @@ fi
 export IMAGE_TAG
 
 log "Verifica prerequisiti…"
-log "IMAGE_TAG=${IMAGE_TAG}"
+log "IMAGE_TAG=${IMAGE_TAG} (da ${TAG_SOURCE})"
 
 command -v docker >/dev/null 2>&1 || die "docker non trovato"
 init_docker
