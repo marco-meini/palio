@@ -41,6 +41,24 @@ test('buildChatSystemPrompt — documenta contrada_rivalita', () => {
   assert.match(DOMAIN_FK_JOINS, /contrada_rivalita cr/);
 });
 
+test('buildChatSystemPrompt — documenta prove', () => {
+  const prompt = buildChatSystemPrompt();
+  assert.match(DOMAIN_SCHEMA, /palio_prove/);
+  assert.doesNotMatch(DOMAIN_SCHEMA, /palio_prova_partecipazioni/);
+  assert.match(prompt, /Prova Generale/);
+  assert.match(prompt, /cambio monta/i);
+  assert.match(DOMAIN_FK_JOINS, /prv\.numero/);
+});
+
+test('buildChatSystemPrompt — documenta cuffia/nonna', () => {
+  const prompt = buildChatSystemPrompt();
+  assert.match(DOMAIN_SCHEMA, /contrada_cuffia/);
+  assert.match(prompt, /Cuffia.*nonna/i);
+  assert.match(prompt, /correva da cuffia/i);
+  assert.match(DOMAIN_FK_JOINS, /contrada_cuffia ccu/);
+  assert.match(DOMAIN_FK_JOINS, /palio_id_fine IS NULL/);
+});
+
 test('buildChatSystemPrompt — rivalità richiedono filtro date sul periodo', () => {
   const prompt = buildChatSystemPrompt();
   assert.match(prompt, /Rivalità \+ date \(obbligatorio\)/);

@@ -28,6 +28,10 @@ export function caduteUrl(sourceCode) {
   return `${BASE}/5/Palio/${sourceCode}/cadute`;
 }
 
+export function proveUrl(sourceCode) {
+  return `${BASE}/5/Palio/${sourceCode}/prove`;
+}
+
 export function dirigenzeUrl(sourceCode) {
   return `${BASE}/5/Palio/${sourceCode}/dirigenze`;
 }
@@ -404,6 +408,126 @@ export function parseCadute(html) {
     });
   });
 
+  return out;
+}
+
+/** Normalizza etichetta prova da h4 (senza menu Ingresso/Ordine/Cadute). */
+function parseProvaEtichetta(h4Text) {
+  const t = String(h4Text || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const cut = t.split(/\s+Ingresso\s+al\s+canape/i)[0].trim();
+  const head = cut.split(':')[0].trim();
+  if (/^provaccia$/i.test(head)) return 'Provaccia';
+  if (/^prova\s+generale$/i.test(head)) return 'Prova Generale';
+  if (/^prima\s+prova$/i.test(head)) return 'Prima prova';
+  if (/^seconda\s+prova$/i.test(head)) return 'Seconda prova';
+  if (/^terza\s+prova$/i.test(head)) return 'Terza prova';
+  if (/^quarta\s+prova$/i.test(head)) return 'Quarta prova';
+  return head || null;
+}
+
+function normalizeFantinoLabel(raw) {
+  return String(raw || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isInvalidFantinoSourceId(sourceId) {
+  if (sourceId == null || sourceId === '') return true;
+  const s = String(sourceId).trim();
+  return s === '-1' || s === '0' || !/^\d+$/.test(s);
+}
+
+/**
+ * Prove: soli blocchi ingresso canape `div[data-icprova]` (0–5 → numero 1–6).
+ * Ignora ordine arrivo / cadute delle prove. Nessun cavallo in output.
+ */
+export function parseProve(html) {
+  const $ = cheerio.load(html);
+  const root = $('#sezPrincipale').length ? $('#sezPrincipale') : $('body');
+  const out = [];
+
+  root.find('[data-icprova]').each((_, el) => {
+    const block = $(el);
+    const idx = Number(block.attr('data-icprova'));
+    if (!Number.isInteger(idx) || idx < 0 || idx > 5) return;
+    const numero = idx + 1;
+
+    let etichetta = null;
+    const titleSpan = root.find(`[data-titoloprova="${idx}"]`).first();
+    if (titleSpan.length) {
+      const h4 = titleSpan.closest('h4');
+      etichetta = parseProvaEtichetta(h4.length ? h4.text() : titleSpan.parent().text());
+    }
+    if (!etichetta) {
+      const defaults = [
+        'Prima prova',
+        'Seconda prova',
+        'Terza prova',
+        'Quarta prova',
+        'Prova Generale',
+        'Provaccia',
+      ];
+      etichetta = defaults[idx];
+    }
+
+    const rows = [];
+    block.find('.ContradaBox').each((__, boxEl) => {
+      const box = $(boxEl);
+      const label = box.children('div').first().text().trim();
+      if (!label || label.includes('{{')) return;
+
+      const contradaLink = box.find('a[onclick*="DC("]').first();
+      const rawCode = extractOnclickCode(contradaLink, 'DC');
+      if (!rawCode) return;
+      const contradaCode = normalizeContradaCode(rawCode);
+
+      if (isNonPartecipaLabel(label)) {
+        rows.push({
+          contradaCode,
+          canape: null,
+          nonPartecipa: true,
+          fantino: null,
+        });
+        return;
+      }
+
+      let canape;
+      try {
+        canape = mapCanapeLabel(label);
+      } catch {
+        return;
+      }
+      if (canape == null) return;
+
+      const fantinoEl = box.find('[name="Fantino"]').first();
+      const fantinoSourceId = extractOnclickCode(fantinoEl, 'DF');
+      const fantinoLabel = normalizeFantinoLabel(fantinoEl.text());
+      let fantino = null;
+      if (
+        !isInvalidFantinoSourceId(fantinoSourceId) &&
+        fantinoLabel &&
+        fantinoLabel !== '-'
+      ) {
+        fantino = { sourceId: String(fantinoSourceId).trim(), label: fantinoLabel };
+      }
+
+      rows.push({
+        contradaCode,
+        canape,
+        nonPartecipa: false,
+        fantino,
+      });
+    });
+
+    if (rows.length) {
+      out.push({ numero, etichetta, rows });
+    }
+  });
+
+  out.sort((a, b) => a.numero - b.numero);
   return out;
 }
 

@@ -9,6 +9,7 @@ import {
   parseCadute,
   parseDirigenze,
   parseOrdineArrivo,
+  parseProve,
   parseRivalita,
   parseRivalitaYearText,
 } from '../src/lib/ilpalio-parser.js';
@@ -99,6 +100,30 @@ test('parseCadute — Palio 202607020', () => {
   assert.equal(map.get(normalizeContradaCode('BR')), 2);
   assert.equal(map.get(normalizeContradaCode('DR')), 2);
   assert.equal(map.get(normalizeContradaCode('OC')), undefined);
+});
+
+test('parseProve — Palio 202607020 ingresso canape', () => {
+  const prove = parseProve(fixture('prove-202607020.html'));
+  assert.equal(prove.length, 6);
+  assert.equal(prove[0].numero, 1);
+  assert.equal(prove[0].etichetta, 'Prima prova');
+  assert.equal(prove[4].etichetta, 'Prova Generale');
+  assert.equal(prove[5].etichetta, 'Provaccia');
+
+  const p1onda = prove[0].rows.find((r) => r.contradaCode === normalizeContradaCode('ON'));
+  assert.ok(p1onda);
+  assert.equal(p1onda.canape, 1);
+  assert.equal(p1onda.nonPartecipa, false);
+  assert.equal(p1onda.fantino?.sourceId, '940');
+  assert.equal(p1onda.fantino?.label, 'Brigante');
+
+  const p2civ = prove[1].rows.find((r) => r.contradaCode === normalizeContradaCode('CI'));
+  assert.ok(p2civ);
+  assert.equal(p2civ.fantino?.sourceId, '1089');
+  assert.match(p2civ.fantino?.label || '', /Giovanni Puddu/);
+
+  assert.equal(prove[5].rows.length, 10);
+  assert.ok(prove[5].rows.every((r) => r.nonPartecipa && r.canape == null && r.fantino == null));
 });
 
 test('parseAssegnazioneCavalli — Palio 202607030 senza PresoDa', () => {

@@ -10,6 +10,7 @@
     "mcp:palio-db": "tsx ./src/mcp/palio-db-server.ts",
     "test": "node --import tsx --test test/**/*.test.ts",
     "index-regolamento": "tsx ./src/tasks/index-regolamento.ts",
+    "recompute:cuffia": "tsx ./src/tasks/recompute-contrada-cuffia.ts",
     "scrape:rivalita": "tsx ./src/tasks/scrape-contrade-rivalita.ts"
   },
   "overrides": {

@@ -19,7 +19,9 @@ import {
   parseOrdineArrivo,
   parseOrdineEstrazione,
   parsePalioPage,
+  parseProve,
   prevPalioUrlFromHtml,
+  proveUrl,
   sommarioUrl,
   sourceCodeFromUrl,
 } from '../lib/ilpalio-parser.js';
@@ -33,13 +35,14 @@ import {
   getOrCreatePriore,
   loadContradeMap,
 } from '../lib/entities.js';
+import { recomputeContradaCuffia } from '../lib/recompute-contrada-cuffia.js';
 
 const DEFAULT_START = ingressoCanapeUrl('202507020');
 
 const HELP_TEXT = `Usage: node tasks/scrape-ilpalio.js [options]
 
 Full import per Palio: sommario, ingresso-canape, dirigenze, ordine-estrazione,
-assegnazione-cavalli, ordine-arrivo, cadute. Crawls backwards via "Palio precedente".
+assegnazione-cavalli, ordine-arrivo, cadute, prove. Crawls backwards via "Palio precedente".
 
 Options:
   --start URL              First ingresso-canape URL (default: ${DEFAULT_START})
@@ -103,6 +106,7 @@ async function persistPalio(
   assegnazioneByCode,
   arrivoByCode,
   caduteByCode,
+  proveList,
   dirigenzeByCode,
 ) {
   if (!sommario.vincitrice) {
@@ -128,6 +132,7 @@ async function persistPalio(
     [palioId],
   );
   await client.query('DELETE FROM palio_partecipazioni WHERE palio_id = $1', [palioId]);
+  await client.query('DELETE FROM palio_prove WHERE palio_id = $1', [palioId]);
 
   const v = sommario.vincitrice;
 
@@ -298,6 +303,51 @@ async function persistPalio(
     }
   }
 
+  if (proveList?.length) {
+    for (const prova of proveList) {
+      for (const prow of prova.rows) {
+        const contradaName = nameFromCode(prow.contradaCode);
+        const contradaId = contradeByName.get(contradaName);
+        if (!contradaId) {
+          process.stderr.write(
+            `WARN: unknown prova contrada ${prow.contradaCode} (prova ${prova.numero})\n`,
+          );
+          continue;
+        }
+
+        let fantinoId = null;
+        if (!prow.nonPartecipa && prow.fantino?.sourceId) {
+          const label = String(prow.fantino.label || '').trim();
+          const tokens = label.split(/\s+/).filter(Boolean);
+          const isFullName = tokens.length >= 2;
+          fantinoId = await getOrCreateFantino(
+            client,
+            {
+              sourceId: prow.fantino.sourceId,
+              nome: label,
+              soprannome: isFullName ? null : label,
+            },
+            { fullNome: isFullName },
+          );
+        }
+
+        await client.query(
+          `INSERT INTO palio_prove (
+             palio_id, numero, contrada_id, canape, fantino_id, non_partecipa
+           ) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            palioId,
+            prova.numero,
+            contradaId,
+            prow.nonPartecipa ? null : prow.canape,
+            fantinoId,
+            Boolean(prow.nonPartecipa),
+          ],
+        );
+      }
+    }
+  }
+
   return { palioId, partecipazioni };
 }
 
@@ -453,6 +503,18 @@ async function main() {
         if (opts.failFast) throw err;
       }
 
+      await sleep(opts.delayMs);
+
+      let proveList = null;
+      try {
+        const proveHtml = await fetchHtml(proveUrl(code));
+        proveList = parseProve(proveHtml);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`WARN (prove): ${msg}`);
+        if (opts.failFast) throw err;
+      }
+
       try {
         await client.query('BEGIN');
         const { partecipazioni } = await persistPalio(
@@ -464,10 +526,19 @@ async function main() {
           assegnazioneByCode,
           arrivoByCode,
           caduteByCode,
+          proveList,
           dirigenzeByCode,
         );
         await client.query('COMMIT');
-        console.error(`ok (${partecipazioni} partecipazioni)`);
+        try {
+          const cuffia = await recomputeContradaCuffia(pool);
+          console.error(
+            `ok (${partecipazioni} partecipazioni; cuffia ${cuffia.periods} periodi)`,
+          );
+        } catch (cuffiaErr) {
+          const msg = cuffiaErr instanceof Error ? cuffiaErr.message : String(cuffiaErr);
+          console.error(`ok (${partecipazioni} partecipazioni; WARN cuffia: ${msg})`);
+        }
         count++;
         if (opts.untilDate && sommario.dataPalio < opts.untilDate) {
           url = null;

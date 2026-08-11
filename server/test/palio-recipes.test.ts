@@ -176,6 +176,7 @@ test('RECIPE_NAMES — copre tutte le ricette previste', () => {
     'contrada_win_totals',
     'wins_by_fantino',
     'wins_by_horse',
+    'rivalita_contrada',
   ]);
 });
 

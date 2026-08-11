@@ -190,7 +190,7 @@ Se il DB aveva già la colonna `ordine`, lo script la rinomina in `canape`.
 Workflow completo (singolo Palio, intervallo date, validazione): skill agent
 [`.cursor/skills/scrape-ilpalio/`](.cursor/skills/scrape-ilpalio/).
 
-Per ogni Palio lo scraper effettua **sette richieste**:
+Per ogni Palio lo scraper effettua **otto richieste**:
 
 1. **Sommario** (`/5/Palio/{codice}`) — data, straordinario, vincitrice (contrada vincente e fantino con nome completo)
 2. **Ingresso al canape** (`/5/Palio/{codice}/ingresso-canape`) — tutte le contrade con **cavallo**, **fantino** e posto al canape
@@ -199,6 +199,7 @@ Per ogni Palio lo scraper effettua **sette richieste**:
 5. **Assegnazione cavalli** (`/5/Palio/{codice}/assegnazione-cavalli`) — ordine in tratta, numeri orecchio/coscia, proprietario e «preso da» (merge sulle righe canape, come ordine-estrazione)
 6. **Ordine di arrivo** (`/5/Palio/{codice}/ordine-arrivo`) — posizione in arrivo (1°, 2°, …; merge sulle righe canape; solo i piazzati elencati sul sito)
 7. **Cadute** (`/5/Palio/{codice}/cadute`) — giro di caduta 1–3 (`giro_caduta`; `NULL` se non caduta; merge sulle righe canape)
+8. **Prove** (`/5/Palio/{codice}/prove`) — sei prove (canape + fantino per contrada in `palio_prove`; niente cavallo)
 
 Il crawl segue il link «Palio precedente» sulla pagina ingresso-canape.
 
@@ -274,6 +275,19 @@ Da `/cadute` (sezioni `.Corniciato` con h4 Primo/Secondo/Terzo giro e box `.Cont
 
 Se la stessa contrada compare due volte (anomalo), resta il giro minore. Luogo della caduta (S. Martino / Casato) non è importato. Soft-fail come le altre pagine post-canape; `non_partecipa` → NULL.
 
+### Prove (`palio_prove`)
+
+Da `/prove` (solo `div[data-icprova]` = ingresso al canape; non arrivo/cadute delle prove). Una riga per (palio, numero prova, contrada):
+
+| Colonna | Significato |
+|---------|-------------|
+| `numero` | 1–4 Prima…Quarta, 5 Prova Generale, 6 Provaccia |
+| `canape` | Posto in prova (1–9; 10 = R); NULL se N.P. |
+| `fantino_id` | Fantino in prova (può cambiare); NULL se N.P. |
+| `non_partecipa` | Es. Provaccia annullata |
+
+Il cavallo non è duplicato: resta in `palio_partecipazioni` per l’edizione.
+
 ### Colonne `capitano_id`, `priore_id`, `barbaresco_id` e mangini
 
 Da `/dirigenze` (`.Corniciato.Riquadro` per contrada, codice da `DC(...)` sulla bandiera):
@@ -289,7 +303,7 @@ Valori applicati a **ogni** riga in `palio_partecipazioni` creata dal canape (in
 
 Se la pagina dirigenze non è disponibile o il parse fallisce, capitano/priore/barbaresco e mangini restano vuoti (warning su stderr), salvo `--fail-fast`.
 
-Test parser: `cd server && npm test` (fixture `test/fixtures/ordine-arrivo-202507020.html`, `test/fixtures/cadute-202607020.html`, `test/fixtures/dirigenze-202507020.html`).
+Test parser: `cd server && npm test` (fixture `test/fixtures/ordine-arrivo-202507020.html`, `test/fixtures/cadute-202607020.html`, `test/fixtures/prove-202607020.html`, `test/fixtures/dirigenze-202507020.html`).
 
 ### Validazione rapida
 

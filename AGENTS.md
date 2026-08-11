@@ -84,9 +84,9 @@ Nota: il README può citare Fastify storicamente — il server è **Express**.
 
 ### Scraper / parser
 
-- Import Palio: **sette pagine** per edizione (sommario, ingresso-canape, dirigenze, ordine-estrazione, assegnazione-cavalli, ordine-arrivo, cadute) — skill `scrape-ilpalio`
+- Import Palio: **otto pagine** per edizione (sommario, ingresso-canape, dirigenze, ordine-estrazione, assegnazione-cavalli, ordine-arrivo, cadute, prove) — skill `scrape-ilpalio`
 - Parser in `lib/ilpalio-parser.ts`; test con fixture HTML in `server/test/fixtures/`
-- Dominio: `canape` ≠ `ordine` (estrazione) ≠ `ordine_assegnazione` ≠ `ordine_arrivo`; `giro_caduta` 1–3 o NULL; `canape=10` = rincorsa; `non_partecipa` = N.P.
+- Dominio: `canape` ≠ `ordine` (estrazione) ≠ `ordine_assegnazione` ≠ `ordine_arrivo`; `giro_caduta` 1–3 o NULL; prove 1–6 in `palio_prove` (canape+fantino); `canape=10` = rincorsa; `non_partecipa` = N.P.
 - Rispettare `--delay-ms` verso il sito; non martellare il source
 
 ### Test

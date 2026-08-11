@@ -1,5 +1,16 @@
 ## WIP
 
+### contrada_cuffia.sql
+- `contrada_cuffia` — periodi di **cuffia** / **nonna** (`contrada_id`, `palio_id_inizio`, `palio_id_fine`; fine NULL = in corso)
+- Semantica: cuffia **dopo** il risultato del Palio (vittorie ≤ quell’edizione); «corre da cuffia» = periodo del Palio precedente
+- Popolamento: `cd server && npm run recompute:cuffia`; anche dopo ogni `COMMIT` di `scrape-ilpalio`
+- Grant `SELECT` a `palio_chat_ro` se il ruolo esiste
+
+### palio_prove.sql
+- `palio_prove` — una riga per (palio, numero prova 1–6, contrada): `canape` (1–9, 10=R), `fantino_id`, `non_partecipa` (niente cavallo; etichetta derivabile da `numero`)
+- Scraper: ottava fetch soft-fail `/prove`; DELETE+INSERT nella stessa TX del Palio
+- Grant `SELECT` a `palio_chat_ro` se il ruolo esiste
+
 ### palio_partecipazioni_giro_caduta.sql
 - `palio_partecipazioni.giro_caduta` — giro di caduta (1–3) da `/cadute`; NULL se non caduta
 - CHECK: NULL oppure BETWEEN 1 AND 3
