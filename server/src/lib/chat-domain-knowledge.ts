@@ -10,6 +10,7 @@ export const DOMAIN_TERMINOLOGY = `Terminologia e convenzioni (rispetta sempre n
 - **orecchio** (1–10): numero dato al cavallo per l'assegnazione in tratta.
 - **coscia** (1–N, N = cavalli presentati): numero per le batterie di selezione; l'orecchio segue l'ordine delle coscie scelte (es. coscia 4→orecchio 1, 9→2, 12→3, 13→4…).
 - **cavallo_preso_da**: contradaiolo che, vestendo i costumi di contrada (la **montura**), va a prendere il cavallo: «si è monturato», «si è vestito», «ha portato il cavallo».
+- **giro_caduta** (colonna \`giro_caduta\`): giro in cui la contrada è caduta durante la corsa (**1** = primo giro, **2** = secondo, **3** = terzo). \`NULL\` = nessuna caduta (o dato non disponibile). Non confondere con \`ordine_arrivo\`.
 - **Rivalità tra contrade**: tabella \`contrada_rivalita\` (coppia non orientata: \`contrada_id < rivale_id\`). Periodi storici con \`data_inizio\` / \`data_fine\` a **precisione annuale** (1 gen / 31 dic dal sito). \`data_fine IS NULL\` = rivalità ancora in corso; \`data_inizio IS NULL\` = il sito indica solo «fino al YYYY». Più righe per la stessa coppia = periodi distinti (es. Nicchio–Valdimontone). Non confondere con alleanze (non in DB).`;
 
 export const DOMAIN_SCHEMA = `Schema PostgreSQL (tabelle e colonne principali):
@@ -33,7 +34,7 @@ palio_partecipazioni(
   ordine_assegnazione, orecchio, coscia,
   cavallo_id → cavalli.id, fantino_id → fantini.id,
   capitano_id → capitani.id, priore_id → priori.id, barbaresco_id → barbareschi.id,
-  cavallo_preso_da, proprietario_cavallo, ordine_arrivo
+  cavallo_preso_da, proprietario_cavallo, ordine_arrivo, giro_caduta
 )
 
 palio_partecipazione_mangini(

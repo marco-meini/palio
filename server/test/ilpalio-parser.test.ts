@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import {
   normalizeContradaCode,
+  parseAssegnazioneCavalli,
+  parseCadute,
   parseDirigenze,
   parseOrdineArrivo,
   parseRivalita,
@@ -86,4 +88,34 @@ test('parseOrdineArrivo — Palio 202507020', () => {
   assert.equal(map.get(normalizeContradaCode('BR')), 2);
   assert.equal(map.get(normalizeContradaCode('SE')), 3);
   assert.equal(map.get(normalizeContradaCode('VA')), 4);
+});
+
+test('parseCadute — Palio 202607020', () => {
+  const map = parseCadute(fixture('cadute-202607020.html'));
+
+  assert.equal(map.size, 4);
+  assert.equal(map.get(normalizeContradaCode('TO')), 1);
+  assert.equal(map.get(normalizeContradaCode('GI')), 1);
+  assert.equal(map.get(normalizeContradaCode('BR')), 2);
+  assert.equal(map.get(normalizeContradaCode('DR')), 2);
+  assert.equal(map.get(normalizeContradaCode('OC')), undefined);
+});
+
+test('parseAssegnazioneCavalli — Palio 202607030 senza PresoDa', () => {
+  const map = parseAssegnazioneCavalli(fixture('assegnazione-cavalli-202607030.html'));
+  assert.equal(map.size, 10);
+
+  const bruco = map.get(normalizeContradaCode('BR'));
+  assert.ok(bruco);
+  assert.equal(bruco.ordineAssegnazione, 1);
+  assert.equal(bruco.orecchio, 6);
+  assert.equal(bruco.coscia, 15);
+  assert.equal(bruco.proprietarioCavallo, 'Michele Seazzu');
+  assert.equal(bruco.cavalloPresoDa, null);
+
+  const giraffa = map.get(normalizeContradaCode('GI'));
+  assert.ok(giraffa);
+  assert.equal(giraffa.ordineAssegnazione, 10);
+  assert.equal(giraffa.proprietarioCavallo, 'Luciano Marri');
+  assert.equal(giraffa.cavalloPresoDa, null);
 });

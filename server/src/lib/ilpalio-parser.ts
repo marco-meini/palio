@@ -24,6 +24,10 @@ export function ordineArrivoUrl(sourceCode) {
   return `${BASE}/5/Palio/${sourceCode}/ordine-arrivo`;
 }
 
+export function caduteUrl(sourceCode) {
+  return `${BASE}/5/Palio/${sourceCode}/cadute`;
+}
+
 export function dirigenzeUrl(sourceCode) {
   return `${BASE}/5/Palio/${sourceCode}/dirigenze`;
 }
@@ -285,7 +289,8 @@ export function parseAssegnazioneCavalli(html) {
       orecchio: number;
       coscia: number;
       proprietarioCavallo: string;
-      cavalloPresoDa: string;
+      /** Assente su alcune pagine recenti senza cella `name="PresoDa"`. */
+      cavalloPresoDa: string | null;
     }
   > = new Map();
 
@@ -308,10 +313,16 @@ export function parseAssegnazioneCavalli(html) {
     if (!rawCode) return;
     const contradaCode = normalizeContradaCode(rawCode);
 
-    const proprietarioCavallo = row.find('[name="Proprietario"]').first().text().trim();
+    let proprietarioCavallo = row.find('[name="Proprietario"]').first().text().trim();
+    if (!proprietarioCavallo) {
+      const mobileOwner = row.find('[name="Cavallo"] .Mobile').first().text().trim();
+      const m = /^di\s+(.+)$/i.exec(mobileOwner);
+      if (m) proprietarioCavallo = m[1].trim();
+    }
     const presoDaEl = row.find('[name="PresoDa"]').first();
-    const cavalloPresoDa = (presoDaEl.find('a').first().text() || presoDaEl.text()).trim();
-    if (!proprietarioCavallo || !cavalloPresoDa) return;
+    const cavalloPresoDaRaw = (presoDaEl.find('a').first().text() || presoDaEl.text()).trim();
+    const cavalloPresoDa = cavalloPresoDaRaw || null;
+    if (!proprietarioCavallo) return;
 
     out.set(contradaCode, {
       ordineAssegnazione,
@@ -350,6 +361,48 @@ export function parseOrdineArrivo(html) {
   if (!out.size) {
     throw new Error('No ContradaBox rows on ordine-arrivo page');
   }
+
+  return out;
+}
+
+/** `Primo giro` → 1, `Secondo giro` → 2, `Terzo giro` → 3. */
+function parseGiroCadutaLabel(text) {
+  const t = String(text || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  if (/primo\s+giro/.test(t)) return 1;
+  if (/secondo\s+giro/.test(t)) return 2;
+  if (/terzo\s+giro/.test(t)) return 3;
+  return null;
+}
+
+/**
+ * Cadute per giro: sezioni `.Corniciato` con h4 Primo/Secondo/Terzo giro
+ * e box `.ContradaCaduta .ContradaBox` (onclick DC).
+ * Mappa code → giro (1–3); se duplicato, tiene il giro minore.
+ */
+export function parseCadute(html) {
+  const $ = cheerio.load(html);
+  const root = $('#sezPrincipale').length ? $('#sezPrincipale') : $('body');
+  const out: Map<string, number> = new Map();
+
+  root.find('section.Corniciato').each((_, el) => {
+    const section = $(el);
+    const giro = parseGiroCadutaLabel(section.find('h4').first().text());
+    if (giro == null) return;
+
+    section.find('.ContradaCaduta .ContradaBox').each((__, boxEl) => {
+      const box = $(boxEl);
+      const rawCode =
+        extractOnclickCode(box.find('a[onclick*="DC("]').first(), 'DC') ||
+        extractOnclickCode(box.find('[onclick*="DC("]').first(), 'DC');
+      if (!rawCode) return;
+      const code = normalizeContradaCode(rawCode);
+      const prev = out.get(code);
+      if (prev == null || giro < prev) out.set(code, giro);
+    });
+  });
 
   return out;
 }

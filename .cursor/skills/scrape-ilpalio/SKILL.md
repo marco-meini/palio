@@ -1,16 +1,16 @@
 ---
 name: scrape-ilpalio
 description: >-
-  Runs full Palio imports from ilpalio.siena.it (six pages per Palio: sommario,
+  Runs full Palio imports from ilpalio.siena.it (seven pages per Palio: sommario,
   ingresso-canape, dirigenze, ordine-estrazione, assegnazione-cavalli,
-  ordine-arrivo) via server/src/tasks/scrape-ilpalio.ts. Use when the user asks to
+  ordine-arrivo, cadute) via server/src/tasks/scrape-ilpalio.ts. Use when the user asks to
   scrape, import, sync, or backfill Palio data; run a single Palio by source
   code; crawl a date range backwards; or refresh data from ilpalio.siena.it.
 ---
 
 # Scrape ilpalio.siena.it
 
-Import complete Palio records into Postgres using `server/src/tasks/scrape-ilpalio.ts`. Each Palio triggers **six HTTP requests** then a DB transaction.
+Import complete Palio records into Postgres using `server/src/tasks/scrape-ilpalio.ts`. Each Palio triggers **seven HTTP requests** then a DB transaction.
 
 ## Prerequisites
 

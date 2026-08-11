@@ -50,7 +50,14 @@ die() { printf 'ERRORE: %s\n' "$*" >&2; exit 1; }
 
 # m.meini sul VPS: Docker di solito senza sudo; fallback se serve.
 DOCKER=(docker)
-docker_compose() { "${DOCKER[@]}" compose "$@"; }
+# IMAGE_TAG passato esplicitamente: con `sudo docker` l'env esportato spesso si perde.
+docker_compose() {
+  if [[ "${DOCKER[0]}" == "sudo" ]]; then
+    sudo env IMAGE_TAG="$IMAGE_TAG" docker compose "$@"
+  else
+    env IMAGE_TAG="$IMAGE_TAG" docker compose "$@"
+  fi
+}
 
 init_docker() {
   if docker info >/dev/null 2>&1; then
@@ -114,7 +121,6 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Priorità: --version > IMAGE_TAG env > package.json "version"
 package_version() {
   local pkg="$ROOT/package.json"
   [[ -f "$pkg" ]] || die "Manca package.json nella root del repo"
@@ -129,29 +135,41 @@ package_version() {
   printf '%s' "$ver"
 }
 
-ENV_IMAGE_TAG="${IMAGE_TAG:-}"
-TAG_SOURCE=""
-if [[ -n "$VERSION_ARG" ]]; then
-  IMAGE_TAG="$VERSION_ARG"
-  TAG_SOURCE="--version"
-elif [[ -n "$ENV_IMAGE_TAG" ]]; then
-  IMAGE_TAG="$ENV_IMAGE_TAG"
-  TAG_SOURCE="env IMAGE_TAG"
-else
-  IMAGE_TAG="$(package_version)"
-  TAG_SOURCE="package.json"
-fi
-if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
-  die "Tag non valido: '${IMAGE_TAG}' (usa solo lettere, numeri, . _ -)"
-fi
-export IMAGE_TAG
+resolve_image_tag() {
+  # Priorità: --version > IMAGE_TAG env > package.json "version"
+  ENV_IMAGE_TAG="${IMAGE_TAG:-}"
+  if [[ -n "$VERSION_ARG" ]]; then
+    IMAGE_TAG="$VERSION_ARG"
+    TAG_SOURCE="--version"
+  elif [[ -n "$ENV_IMAGE_TAG" ]]; then
+    IMAGE_TAG="$ENV_IMAGE_TAG"
+    TAG_SOURCE="env IMAGE_TAG"
+  else
+    IMAGE_TAG="$(package_version)"
+    TAG_SOURCE="package.json"
+  fi
+  if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    die "Tag non valido: '${IMAGE_TAG}' (usa solo lettere, numeri, . _ -)"
+  fi
+  export IMAGE_TAG
+  # Compose legge .env per interpolare ${IMAGE_TAG} (affidabile anche con sudo).
+  {
+    [[ -f "$ROOT/.env" ]] && grep -vE '^IMAGE_TAG=' "$ROOT/.env" || true
+    printf 'IMAGE_TAG=%s\n' "$IMAGE_TAG"
+  } >"$ROOT/.env.tmp"
+  mv "$ROOT/.env.tmp" "$ROOT/.env"
+}
 
 log "Verifica prerequisiti…"
-log "IMAGE_TAG=${IMAGE_TAG} (da ${TAG_SOURCE})"
 
 command -v docker >/dev/null 2>&1 || die "docker non trovato"
 init_docker
-docker_compose version >/dev/null 2>&1 || die "docker compose non trovato"
+# compose version check without IMAGE_TAG yet
+if [[ "${DOCKER[0]}" == "sudo" ]]; then
+  sudo docker compose version >/dev/null 2>&1 || die "docker compose non trovato"
+else
+  docker compose version >/dev/null 2>&1 || die "docker compose non trovato"
+fi
 
 [[ -f docker-compose.yml ]] || die "docker-compose.yml non trovato (esegui dalla root del repo)"
 [[ -f .env.production ]] || die "Manca .env.production — copia da .env.production.example e compila i valori"
@@ -174,8 +192,13 @@ if [[ "$auth_enabled" == "true" ]]; then
   fi
 fi
 
-"${DOCKER[@]}" network inspect postgres >/dev/null 2>&1 \
-  || die "Rete Docker 'postgres' non trovata — creala e collega il container Postgres"
+if [[ "${DOCKER[0]}" == "sudo" ]]; then
+  sudo docker network inspect postgres >/dev/null 2>&1 \
+    || die "Rete Docker 'postgres' non trovata — creala e collega il container Postgres"
+else
+  docker network inspect postgres >/dev/null 2>&1 \
+    || die "Rete Docker 'postgres' non trovata — creala e collega il container Postgres"
+fi
 
 log "Regolamento RAG: assicurati che pgvector sia abilitato e l'indice popolato:"
 log "  psql ... -f db/bootstrap/03_pgvector.sql"
@@ -186,6 +209,10 @@ command -v git >/dev/null 2>&1 || die "git non trovato"
 [[ -d .git ]] || die "Non è un repository git"
 log "git pull…"
 git pull --ff-only
+
+# Dopo git pull: version da package.json aggiornato
+resolve_image_tag
+log "IMAGE_TAG=${IMAGE_TAG} (da ${TAG_SOURCE})"
 
 if $SKIP_BUILD; then
   log "Avvio container (senza rebuild) — immagini :${IMAGE_TAG}…"
@@ -216,7 +243,7 @@ if ! $SKIP_HEALTH; then
   if ! $ok; then
     log "Ultimi log backend:"
     docker_compose logs --tail=40 server || true
-    die "Health check fallito dopo ${HEALTH_RETRIES} tentativi. Diagnostica: ${DOCKER[*]} compose ps && ${DOCKER[*]} compose logs --tail=80 server"
+    die "Health check fallito dopo ${HEALTH_RETRIES} tentativi. Diagnostica: docker compose ps && docker compose logs --tail=80 server"
   fi
   log "Health OK: $(cat /tmp/palio-health.json)"
   rm -f /tmp/palio-health.json

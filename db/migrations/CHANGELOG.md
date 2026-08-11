@@ -1,5 +1,10 @@
 ## WIP
 
+### palio_partecipazioni_giro_caduta.sql
+- `palio_partecipazioni.giro_caduta` — giro di caduta (1–3) da `/cadute`; NULL se non caduta
+- CHECK: NULL oppure BETWEEN 1 AND 3
+- Scraper: settima fetch soft-fail `/cadute`; merge su righe canape (`NULL` se assente o `non_partecipa`)
+
 ### contrada_rivalita.sql
 - `contrada_rivalita` — periodi di rivalità tra due contrade (`contrada_id`, `rivale_id` con `contrada_id < rivale_id`, `data_inizio`, `data_fine`)
 - Precisione annuale da ilpalio (`?rivalita`): inizio = 1 gen, fine = 31 dic; `data_fine` NULL = ancora in corso; `data_inizio` NULL = solo «fino al YYYY»

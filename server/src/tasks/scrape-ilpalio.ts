@@ -5,6 +5,7 @@ import { loadPgConfig } from '../lib/db-config.js';
 import { fetchHtml, sleep } from '../lib/https-requests.js';
 import {
   assegnazioneCavalliUrl,
+  caduteUrl,
   dirigenzeUrl,
   ingressoCanapeUrl,
   isEstrattaDaSindaco,
@@ -12,6 +13,7 @@ import {
   ordineArrivoUrl,
   ordineEstrazioneUrl,
   parseAssegnazioneCavalli,
+  parseCadute,
   parseDirigenze,
   parseIngressoCanape,
   parseOrdineArrivo,
@@ -37,7 +39,7 @@ const DEFAULT_START = ingressoCanapeUrl('202507020');
 const HELP_TEXT = `Usage: node tasks/scrape-ilpalio.js [options]
 
 Full import per Palio: sommario, ingresso-canape, dirigenze, ordine-estrazione,
-assegnazione-cavalli, ordine-arrivo. Crawls backwards via "Palio precedente".
+assegnazione-cavalli, ordine-arrivo, cadute. Crawls backwards via "Palio precedente".
 
 Options:
   --start URL              First ingresso-canape URL (default: ${DEFAULT_START})
@@ -100,6 +102,7 @@ async function persistPalio(
   ordineByCode,
   assegnazioneByCode,
   arrivoByCode,
+  caduteByCode,
   dirigenzeByCode,
 ) {
   if (!sommario.vincitrice) {
@@ -229,6 +232,12 @@ async function persistPalio(
       }
     }
 
+    let giroCaduta = null;
+    if (!nonPartecipa && caduteByCode?.size) {
+      const giro = caduteByCode.get(codeKey);
+      if (giro != null) giroCaduta = giro;
+    }
+
     const dirigenza = dirigenzeByCode?.get(codeKey);
     if (dirigenzeByCode?.size && !dirigenza) {
       process.stderr.write(
@@ -248,9 +257,9 @@ async function persistPalio(
          palio_id, contrada_id, vincitrice, non_partecipa, canape,
          ordine, estratta, estratta_da_id,
          ordine_assegnazione, orecchio, coscia, proprietario_cavallo, cavallo_preso_da,
-         ordine_arrivo,
+         ordine_arrivo, giro_caduta,
          cavallo_id, fantino_id, capitano_id, priore_id, barbaresco_id
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING id`,
       [
         palioId,
@@ -267,6 +276,7 @@ async function persistPalio(
         nonPartecipa ? null : proprietarioCavallo,
         nonPartecipa ? null : cavalloPresoDa,
         nonPartecipa ? null : ordineArrivo,
+        nonPartecipa ? null : giroCaduta,
         nonPartecipa ? null : cavalloId,
         nonPartecipa ? null : fantinoId,
         capitanoId,
@@ -405,7 +415,7 @@ async function main() {
           orecchio: number;
           coscia: number;
           proprietarioCavallo: string;
-          cavalloPresoDa: string;
+          cavalloPresoDa: string | null;
         }
       > | null = null;
       try {
@@ -420,13 +430,26 @@ async function main() {
       await sleep(opts.delayMs);
 
       const arrivoUrl = ordineArrivoUrl(code);
-            let arrivoByCode: Map<string, number>|null = null;
+      let arrivoByCode: Map<string, number> | null = null;
       try {
         const arrivoHtml = await fetchHtml(arrivoUrl);
         arrivoByCode = parseOrdineArrivo(arrivoHtml);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`WARN (ordine-arrivo): ${msg}`);
+        if (opts.failFast) throw err;
+      }
+
+      await sleep(opts.delayMs);
+
+      const cadutePageUrl = caduteUrl(code);
+      let caduteByCode: Map<string, number> | null = null;
+      try {
+        const caduteHtml = await fetchHtml(cadutePageUrl);
+        caduteByCode = parseCadute(caduteHtml);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`WARN (cadute): ${msg}`);
         if (opts.failFast) throw err;
       }
 
@@ -440,6 +463,7 @@ async function main() {
           ordineByCode,
           assegnazioneByCode,
           arrivoByCode,
+          caduteByCode,
           dirigenzeByCode,
         );
         await client.query('COMMIT');

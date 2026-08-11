@@ -190,7 +190,7 @@ Se il DB aveva già la colonna `ordine`, lo script la rinomina in `canape`.
 Workflow completo (singolo Palio, intervallo date, validazione): skill agent
 [`.cursor/skills/scrape-ilpalio/`](.cursor/skills/scrape-ilpalio/).
 
-Per ogni Palio lo scraper effettua **sei richieste**:
+Per ogni Palio lo scraper effettua **sette richieste**:
 
 1. **Sommario** (`/5/Palio/{codice}`) — data, straordinario, vincitrice (contrada vincente e fantino con nome completo)
 2. **Ingresso al canape** (`/5/Palio/{codice}/ingresso-canape`) — tutte le contrade con **cavallo**, **fantino** e posto al canape
@@ -198,6 +198,7 @@ Per ogni Palio lo scraper effettua **sei richieste**:
 4. **Ordine di estrazione** (`/5/Palio/{codice}/ordine-estrazione`) — ordine di estrazione (1–10), flag `estratta` e eventuale «estratta da [contrada]» (solo sulle righe già importate dal canape; la sezione «Le altre sette» non crea righe)
 5. **Assegnazione cavalli** (`/5/Palio/{codice}/assegnazione-cavalli`) — ordine in tratta, numeri orecchio/coscia, proprietario e «preso da» (merge sulle righe canape, come ordine-estrazione)
 6. **Ordine di arrivo** (`/5/Palio/{codice}/ordine-arrivo`) — posizione in arrivo (1°, 2°, …; merge sulle righe canape; solo i piazzati elencati sul sito)
+7. **Cadute** (`/5/Palio/{codice}/cadute`) — giro di caduta 1–3 (`giro_caduta`; `NULL` se non caduta; merge sulle righe canape)
 
 Il crawl segue il link «Palio precedente» sulla pagina ingresso-canape.
 
@@ -263,6 +264,16 @@ Da `/ordine-arrivo` (`.ContradaBox` in `#sezPrincipale`, etichetta `1°`, `2°`,
 
 Il sito elenca spesso solo i primi classificati; le altre contrade restano con `ordine_arrivo` NULL. Se la pagina non è disponibile o il parse fallisce, l’import prosegue con NULL (warning su stderr), salvo `--fail-fast`. Righe `non_partecipa` non ricevono posizione in arrivo.
 
+### Colonna `giro_caduta`
+
+Da `/cadute` (sezioni `.Corniciato` con h4 Primo/Secondo/Terzo giro e box `.ContradaCaduta`):
+
+| Colonna | Significato |
+|---------|-------------|
+| `giro_caduta` | Giro di caduta (**1**–**3**); **NULL** se non caduta |
+
+Se la stessa contrada compare due volte (anomalo), resta il giro minore. Luogo della caduta (S. Martino / Casato) non è importato. Soft-fail come le altre pagine post-canape; `non_partecipa` → NULL.
+
 ### Colonne `capitano_id`, `priore_id`, `barbaresco_id` e mangini
 
 Da `/dirigenze` (`.Corniciato.Riquadro` per contrada, codice da `DC(...)` sulla bandiera):
@@ -278,7 +289,7 @@ Valori applicati a **ogni** riga in `palio_partecipazioni` creata dal canape (in
 
 Se la pagina dirigenze non è disponibile o il parse fallisce, capitano/priore/barbaresco e mangini restano vuoti (warning su stderr), salvo `--fail-fast`.
 
-Test parser: `cd server && npm test` (fixture `test/fixtures/ordine-arrivo-202507020.html`, `test/fixtures/dirigenze-202507020.html`).
+Test parser: `cd server && npm test` (fixture `test/fixtures/ordine-arrivo-202507020.html`, `test/fixtures/cadute-202607020.html`, `test/fixtures/dirigenze-202507020.html`).
 
 ### Validazione rapida
 
