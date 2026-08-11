@@ -40,3 +40,12 @@ test('buildChatSystemPrompt — documenta contrada_rivalita', () => {
   assert.match(prompt, /data_fine IS NULL/);
   assert.match(DOMAIN_FK_JOINS, /contrada_rivalita cr/);
 });
+
+test('buildChatSystemPrompt — rivalità richiedono filtro date sul periodo', () => {
+  const prompt = buildChatSystemPrompt();
+  assert.match(prompt, /Rivalità \+ date \(obbligatorio\)/);
+  assert.match(prompt, /stesso.*periodo di rivalità/i);
+  assert.match(DOMAIN_FK_JOINS, /cr\.data_inizio IS NULL OR cr\.data_inizio <= p\.data_palio/);
+  assert.match(DOMAIN_FK_JOINS, /LEAST\(pp1\.contrada_id, pp2\.contrada_id\)/);
+  assert.match(prompt, /incrociano.*rivalità/i);
+});

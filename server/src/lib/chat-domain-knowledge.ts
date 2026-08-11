@@ -11,7 +11,8 @@ export const DOMAIN_TERMINOLOGY = `Terminologia e convenzioni (rispetta sempre n
 - **coscia** (1–N, N = cavalli presentati): numero per le batterie di selezione; l'orecchio segue l'ordine delle coscie scelte (es. coscia 4→orecchio 1, 9→2, 12→3, 13→4…).
 - **cavallo_preso_da**: contradaiolo che, vestendo i costumi di contrada (la **montura**), va a prendere il cavallo: «si è monturato», «si è vestito», «ha portato il cavallo».
 - **giro_caduta** (colonna \`giro_caduta\`): giro in cui la contrada è caduta durante la corsa (**1** = primo giro, **2** = secondo, **3** = terzo). \`NULL\` = nessuna caduta (o dato non disponibile). Non confondere con \`ordine_arrivo\`.
-- **Rivalità tra contrade**: tabella \`contrada_rivalita\` (coppia non orientata: \`contrada_id < rivale_id\`). Periodi storici con \`data_inizio\` / \`data_fine\` a **precisione annuale** (1 gen / 31 dic dal sito). \`data_fine IS NULL\` = rivalità ancora in corso; \`data_inizio IS NULL\` = il sito indica solo «fino al YYYY». Più righe per la stessa coppia = periodi distinti (es. Nicchio–Valdimontone). Non confondere con alleanze (non in DB).`;
+- **Rivalità tra contrade**: tabella \`contrada_rivalita\` (coppia non orientata: \`contrada_id < rivale_id\`). Periodi storici con \`data_inizio\` / \`data_fine\` a **precisione annuale** (1 gen / 31 dic dal sito). \`data_fine IS NULL\` = rivalità ancora in corso; \`data_inizio IS NULL\` = il sito indica solo «fino al YYYY». Più righe per la stessa coppia = periodi distinti (es. Nicchio–Valdimontone: fino al 1786, poi di nuovo dal 1952). Non confondere con alleanze (non in DB).
+- **Rivalità + date (obbligatorio)**: una rivalità vale **solo** nelle date coperte da una riga di \`contrada_rivalita\`. Non trattare due contrade come rivali «in assoluto». Per un fatto datato (vittoria, partecipazione, Palio) verifica che \`p.data_palio\` rientri nel periodo: \`(cr.data_inizio IS NULL OR cr.data_inizio <= p.data_palio) AND (cr.data_fine IS NULL OR cr.data_fine >= p.data_palio)\`. Se confronti **due** fatti (es. stesso cavallo vincente con entrambe), **entrambe** le \`data_palio\` devono cadere nello **stesso** periodo di rivalità; se una o entrambe cadono in un gap (es. Nicchio–Valdimontone 1787–1951), **non** contarle.`;
 
 export const DOMAIN_SCHEMA = `Schema PostgreSQL (tabelle e colonne principali):
 
@@ -75,6 +76,37 @@ WHERE c.name ILIKE '%Aquila%' OR c2.name ILIKE '%Aquila%'
 ORDER BY cr.data_inizio NULLS FIRST
 \`\`\`
 
+Rivalità attiva in una data (usa sempre con eventi datati; non basta JOINare la coppia):
+\`\`\`sql
+-- Predicato: rivalità valida il giorno del Palio
+(cr.data_inizio IS NULL OR cr.data_inizio <= p.data_palio)
+AND (cr.data_fine IS NULL OR cr.data_fine >= p.data_palio)
+\`\`\`
+
+Esempio — stesso cavallo vincente con due contrade **mentre erano rivali** (stesso periodo \`cr\`):
+\`\`\`sql
+SELECT ca.nome AS cavallo,
+       c1.name AS contrada_1, p1.data_palio AS data_1,
+       c2.name AS contrada_2, p2.data_palio AS data_2,
+       cr.data_inizio, cr.data_fine
+FROM cavalli ca
+JOIN palio_partecipazioni pp1 ON pp1.cavallo_id = ca.id AND pp1.vincitrice
+JOIN palii p1 ON p1.id = pp1.palio_id
+JOIN contrade c1 ON c1.id = pp1.contrada_id
+JOIN palio_partecipazioni pp2 ON pp2.cavallo_id = ca.id AND pp2.vincitrice
+JOIN palii p2 ON p2.id = pp2.palio_id
+JOIN contrade c2 ON c2.id = pp2.contrada_id
+JOIN contrada_rivalita cr
+  ON cr.contrada_id = LEAST(pp1.contrada_id, pp2.contrada_id)
+ AND cr.rivale_id = GREATEST(pp1.contrada_id, pp2.contrada_id)
+WHERE pp1.contrada_id < pp2.contrada_id
+  AND (cr.data_inizio IS NULL OR cr.data_inizio <= p1.data_palio)
+  AND (cr.data_fine IS NULL OR cr.data_fine >= p1.data_palio)
+  AND (cr.data_inizio IS NULL OR cr.data_inizio <= p2.data_palio)
+  AND (cr.data_fine IS NULL OR cr.data_fine >= p2.data_palio)
+ORDER BY ca.nome, p1.data_palio
+\`\`\`
+
 Esempio — palii in cui Roberto Zalaffi è stato capitano della Chiocciola:
 \`\`\`sql
 SELECT p.data_palio, p.source_code, c.name AS contrada, cap.nome AS capitano
@@ -118,7 +150,8 @@ export const DOMAIN_STRATEGY = `Strategia (risparmio token — segui nell'ordine
    - wins_by_horse: palii vinti con un cavallo (param horse; opz. year_from, year_to)
    - rivalita_contrada: rivalità storiche di una contrada (param contrada)
 2. Domande su **capitano, priore, barbaresco, mangini, fantino** per nome (anche filtrate per contrada) → preferisci **palii_by_person** (param person; opz. role, contrada). Non scrivere SQL libero se la ricetta basta.
-2b. Domande su **rivalità / rivale / nemica** tra contrade → **rivalita_contrada**.
+2b. Domande su **rivalità / rivale / nemica** tra contrade (solo elenco periodi) → **rivalita_contrada**.
+2c. Domande che **incrociano** rivalità con vittorie/partecipazioni/cavalli/anni → **run_readonly_sql** con filtro periodo su **entrambe** le date (vedi DOMAIN_FK_JOINS). Non usare solo la coppia senza \`data_inizio\`/\`data_fine\`.
 3. Altrimenti usa **una sola** run_readonly_sql con SELECT mirato, JOIN necessari, alias canonici (p/pp/c/ca/f/…) e LIMIT adeguato.
 4. Non usare get_schema né search_schema salvo se manca una colonna/tabella indispensabile.`;
 
@@ -127,6 +160,7 @@ export const DOMAIN_RESPONSE_RULES = `Regole risposta:
 - **Rincorsa** solo per \`canape = 10\`; mai per \`ordine\` / posto alle trifore (anche se il numero è 10).
 - Edizioni consecutive = ordine data_palio, id su palii.
 - Stesso cavallo = stesso cavallo_id.
+- **Rivalità**: non elencare come «rivali» fatti fuori periodo (gap tra \`data_fine\` e il periodo successivo). Controlla sempre le date prima di affermarlo.
 - **Formato tabellare per i dati**: se la risposta contiene 2+ righe omogenee (elenchi, classifiche, confronti, statistiche per contrada/anno, partecipanti, vittorie), presenta i dati in una **tabella markdown GFM** con intestazioni chiare in italiano. Una breve frase introduttiva prima della tabella va bene; opzionalmente 1–2 righe di sintesi dopo. Per un solo valore o una risposta breve senza elenco, usa testo semplice.
 - Nelle tabelle, le date delle vittorie in **grassetto**.
 - Non incollare grezzo l'output dei tool: riorganizza in tabella leggibile.
