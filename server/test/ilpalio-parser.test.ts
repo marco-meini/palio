@@ -9,10 +9,12 @@ import {
   parseCadute,
   parseDirigenze,
   parseOrdineArrivo,
+  parsePittoreDrappellone,
   parseProve,
   parseRivalita,
   parseRivalitaYearText,
 } from '../src/lib/ilpalio-parser.js';
+import * as cheerio from 'cheerio';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => readFileSync(join(__dirname, 'fixtures', name), 'utf8');
@@ -143,4 +145,20 @@ test('parseAssegnazioneCavalli — Palio 202607030 senza PresoDa', () => {
   assert.equal(giraffa.ordineAssegnazione, 10);
   assert.equal(giraffa.proprietarioCavallo, 'Luciano Marri');
   assert.equal(giraffa.cavalloPresoDa, null);
+});
+
+test('parsePittoreDrappellone — da #spAutoreDrappellone', () => {
+  const $cadute = cheerio.load(fixture('cadute-202607020.html'));
+  assert.equal(parsePittoreDrappellone($cadute), 'Ismaele Nones');
+
+  const $arrivo = cheerio.load(fixture('ordine-arrivo-202507020.html'));
+  assert.equal(parsePittoreDrappellone($arrivo), 'Riccardo Manganelli');
+
+  assert.equal(parsePittoreDrappellone(cheerio.load('<div></div>')), null);
+  assert.equal(
+    parsePittoreDrappellone(
+      cheerio.load('<span id="spAutoreDrappellone">di Solo Testo</span>'),
+    ),
+    'Solo Testo',
+  );
 });

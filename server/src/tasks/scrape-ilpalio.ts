@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import pg from 'pg';
+import { loadEnvFiles } from '../load-env.js';
 import { loadPgConfig } from '../lib/db-config.js';
 import { fetchHtml, sleep } from '../lib/https-requests.js';
 import {
@@ -36,6 +37,8 @@ import {
   loadContradeMap,
 } from '../lib/entities.js';
 import { recomputeContradaCuffia } from '../lib/recompute-contrada-cuffia.js';
+
+loadEnvFiles();
 
 const DEFAULT_START = ingressoCanapeUrl('202507020');
 
@@ -116,13 +119,19 @@ async function persistPalio(
   const winnerCode = sommario.vincitrice.contradaCode;
 
   const upsert = await client.query(
-    `INSERT INTO palii (source_code, data_palio, straordinario)
-     VALUES ($1, $2::date, $3)
+    `INSERT INTO palii (source_code, data_palio, straordinario, pittore_drappellone)
+     VALUES ($1, $2::date, $3, $4)
      ON CONFLICT (source_code) DO UPDATE
        SET data_palio = EXCLUDED.data_palio,
-           straordinario = EXCLUDED.straordinario
+           straordinario = EXCLUDED.straordinario,
+           pittore_drappellone = EXCLUDED.pittore_drappellone
      RETURNING id`,
-    [sommario.sourceCode, sommario.dataPalio, sommario.straordinario],
+    [
+      sommario.sourceCode,
+      sommario.dataPalio,
+      sommario.straordinario,
+      sommario.pittoreDrappellone ?? null,
+    ],
   );
   const palioId = upsert.rows[0].id;
 

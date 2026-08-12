@@ -1,5 +1,9 @@
 ## WIP
 
+### palii_pittore_drappellone.sql
+- `palii.pittore_drappellone` — nome del pittore del drappellone (testo; NULL se assente sul sito)
+- Scraper: dal sommario `#spAutoreDrappellone` (nessuna fetch extra); UPSERT su `palii`
+
 ### contrada_cuffia.sql
 - `contrada_cuffia` — periodi di **cuffia** / **nonna** (`contrada_id`, `palio_id_inizio`, `palio_id_fine`; fine NULL = in corso)
 - Semantica: cuffia **dopo** il risultato del Palio (vittorie ≤ quell’edizione); «corre da cuffia» = periodo del Palio precedente

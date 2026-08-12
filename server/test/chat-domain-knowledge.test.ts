@@ -59,6 +59,13 @@ test('buildChatSystemPrompt — documenta cuffia/nonna', () => {
   assert.match(DOMAIN_FK_JOINS, /palio_id_fine IS NULL/);
 });
 
+test('buildChatSystemPrompt — documenta pittore_drappellone', () => {
+  const prompt = buildChatSystemPrompt();
+  assert.match(DOMAIN_SCHEMA, /pittore_drappellone/);
+  assert.match(prompt, /Drappellone.*pittore/i);
+  assert.match(DOMAIN_FK_JOINS, /p\.pittore_drappellone/);
+});
+
 test('buildChatSystemPrompt — rivalità richiedono filtro date sul periodo', () => {
   const prompt = buildChatSystemPrompt();
   assert.match(prompt, /Rivalità \+ date \(obbligatorio\)/);

@@ -13,12 +13,13 @@ export const DOMAIN_TERMINOLOGY = `Terminologia e convenzioni (rispetta sempre n
 - **giro_caduta** (colonna \`giro_caduta\`): giro in cui la contrada è caduta durante la corsa (**1** = primo giro, **2** = secondo, **3** = terzo). \`NULL\` = nessuna caduta (o dato non disponibile). Non confondere con \`ordine_arrivo\`.
 - **Prove** (tabella \`palio_prove\`): le **6 prove** prima del Palio — \`numero\` **1–4** Prima…Quarta, **5** Prova Generale, **6** Provaccia (etichetta derivata da \`numero\`, non colonna). Per ogni contrada: \`canape\` (stessa semantica 1–9 / **10**=Rincorsa) e \`fantino_id\` (il fantino **può cambiare** tra prove e rispetto al Palio: *cambio monta*). Il **cavallo non** è nelle prove: è quello di \`palio_partecipazioni\` per l'edizione. \`non_partecipa\` in prova = N.P. (es. Provaccia annullata).
 - **Cuffia** / **nonna** (sinonimi): la contrada che da più tempo non vince il Palio. Tabella \`contrada_cuffia\` (periodi: \`contrada_id\`, \`palio_id_inizio\`, \`palio_id_fine\`; \`palio_id_fine IS NULL\` = ancora in corso). Per il Palio **P** il periodo che lo contiene indica chi è cuffia **dopo** il risultato di P (vittorie fino a P incluso). Chi **correva da cuffia** a P = cuffia del Palio **precedente** (\`ORDER BY data_palio, id\`). Dato derivato da \`vincitrice\`, non scrapato.
+- **Drappellone** / **pittore**: il drappellone è il palio dipinto (premio della corsa). Il nome del pittore è in \`palii.pittore_drappellone\` (testo; \`NULL\` se non noto). Non è una tabella anagrafica separata: filtra direttamente su \`p.pittore_drappellone\`.
 - **Rivalità tra contrade**: tabella \`contrada_rivalita\` (coppia non orientata: \`contrada_id < rivale_id\`). Periodi storici con \`data_inizio\` / \`data_fine\` a **precisione annuale** (1 gen / 31 dic dal sito). \`data_fine IS NULL\` = rivalità ancora in corso; \`data_inizio IS NULL\` = il sito indica solo «fino al YYYY». Più righe per la stessa coppia = periodi distinti (es. Nicchio–Valdimontone: fino al 1786, poi di nuovo dal 1952). Non confondere con alleanze (non in DB).
 - **Rivalità + date (obbligatorio)**: una rivalità vale **solo** nelle date coperte da una riga di \`contrada_rivalita\`. Non trattare due contrade come rivali «in assoluto». Per un fatto datato (vittoria, partecipazione, Palio) verifica che \`p.data_palio\` rientri nel periodo: \`(cr.data_inizio IS NULL OR cr.data_inizio <= p.data_palio) AND (cr.data_fine IS NULL OR cr.data_fine >= p.data_palio)\`. Se confronti **due** fatti (es. stesso cavallo vincente con entrambe), **entrambe** le \`data_palio\` devono cadere nello **stesso** periodo di rivalità; se una o entrambe cadono in un gap (es. Nicchio–Valdimontone 1787–1951), **non** contarle.`;
 
 export const DOMAIN_SCHEMA = `Schema PostgreSQL (tabelle e colonne principali):
 
-palii(id, source_code, data_palio, straordinario)
+palii(id, source_code, data_palio, straordinario, pittore_drappellone)
 contrade(id, name)
 
 -- Anagrafiche: il nome della persona/cavallo/fantino sta QUI, non in palio_partecipazioni
@@ -129,6 +130,14 @@ FROM contrada_cuffia ccu
 JOIN contrade c ON c.id = ccu.contrada_id
 JOIN palii pi ON pi.id = ccu.palio_id_inizio
 WHERE ccu.palio_id_fine IS NULL
+\`\`\`
+
+Pittore del drappellone (colonna su \`palii\`, nessun JOIN anagrafico):
+\`\`\`sql
+SELECT p.data_palio, p.source_code, p.pittore_drappellone
+FROM palii p
+WHERE p.pittore_drappellone ILIKE '%Nones%'
+ORDER BY p.data_palio
 \`\`\`
 
 Rivalità attiva in una data (usa sempre con eventi datati; non basta JOINare la coppia):

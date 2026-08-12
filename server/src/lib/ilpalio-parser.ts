@@ -220,6 +220,7 @@ export function parsePalioPage(html, pageUrl) {
     sourceCode,
     dataPalio,
     straordinario,
+    pittoreDrappellone: parsePittoreDrappellone($),
     vincitrice,
   };
 }
@@ -663,6 +664,19 @@ function findCorniciatoByHeading($, heading) {
     return undefined;
   });
   return found;
+}
+
+/**
+ * Pittore del drappellone dal pannello sommario (#spAutoreDrappellone).
+ * Es. «di <strong>Ismaele Nones</strong>» → «Ismaele Nones».
+ */
+export function parsePittoreDrappellone($) {
+  const el = $('#spAutoreDrappellone');
+  if (!el.length) return null;
+  const fromStrong = el.find('strong').first().text().trim();
+  if (fromStrong) return fromStrong;
+  const raw = el.text().replace(/^\s*di\s+/i, '').trim();
+  return raw || null;
 }
 
 function parseVintoDa($) {
