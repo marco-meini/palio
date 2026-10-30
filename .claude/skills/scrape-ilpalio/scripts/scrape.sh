@@ -20,8 +20,8 @@ Usage: scrape.sh --palio CODE
   --fail-fast            Stop on first error
 
 Examples:
-  ./.cursor/skills/scrape-ilpalio/scripts/scrape.sh --palio 202507020
-  ./.cursor/skills/scrape-ilpalio/scripts/scrape.sh \
+  ./.claude/skills/scrape-ilpalio/scripts/scrape.sh --palio 202507020
+  ./.claude/skills/scrape-ilpalio/scripts/scrape.sh \
     --from 2025-07-01 --to 2025-08-16 --end-code 202508160
 EOF
 }

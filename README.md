@@ -188,7 +188,7 @@ Se il DB aveva già la colonna `ordine`, lo script la rinomina in `canape`.
 ## Import da ilpalio.siena.it
 
 Workflow completo (singolo Palio, intervallo date, validazione): skill agent
-[`.cursor/skills/scrape-ilpalio/`](.cursor/skills/scrape-ilpalio/).
+[`.claude/skills/scrape-ilpalio/`](.claude/skills/scrape-ilpalio/).
 
 Per ogni Palio lo scraper effettua **otto richieste**:
 

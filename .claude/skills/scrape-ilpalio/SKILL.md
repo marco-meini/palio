@@ -23,7 +23,7 @@ Import complete Palio records into Postgres using `server/src/tasks/scrape-ilpal
 
 Optional wrapper (from repo root):
 ```bash
-chmod +x .cursor/skills/scrape-ilpalio/scripts/scrape.sh
+chmod +x .claude/skills/scrape-ilpalio/scripts/scrape.sh
 ```
 
 ## Single Palio (full scrape)
@@ -47,7 +47,7 @@ npx tsx src/tasks/scrape-ilpalio.js \
 Wrapper:
 
 ```bash
-.cursor/skills/scrape-ilpalio/scripts/scrape.sh --palio 202507020
+.claude/skills/scrape-ilpalio/scripts/scrape.sh --palio 202507020
 ```
 
 ## Date range (backwards crawl)
@@ -81,7 +81,7 @@ npx tsx src/tasks/scrape-ilpalio.js \
 Wrapper (`--to` documents the intended upper bound; crawl start is `--end-code`):
 
 ```bash
-.cursor/skills/scrape-ilpalio/scripts/scrape.sh \
+.claude/skills/scrape-ilpalio/scripts/scrape.sh \
   --from 2025-07-01 --to 2025-08-16 --end-code 202508160
 ```
 

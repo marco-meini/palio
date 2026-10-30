@@ -1,6 +1,6 @@
 # AGENTS.md — Palio / Dimmelo
 
-Istruzioni per agenti AI che lavorano su questo repository. Preferire questo file e le skill in `.cursor/skills/` rispetto a ipotesi generiche.
+Istruzioni per agenti AI che lavorano su questo repository. Preferire questo file e le skill in `.claude/skills/` rispetto a ipotesi generiche.
 
 ## Cos’è
 
@@ -21,7 +21,7 @@ Documentazione umana: `README.md`. Non duplicare runbook lunghi qui; punta ai pa
 | `db/migrations/` | SQL pending (`prerelease.sql`, file isolati) e `released/` |
 | `db/dumps/` | Schema/dump iniziali |
 | `docker/`, `deploy.sh` | Deploy VPS (Caddy, container FE/BE) |
-| `.cursor/skills/` | Skill operative (es. scrape) |
+| `.claude/skills/` | Skill operative (es. scrape) |
 | `.env` | Segreti locali (mai commitare); template: `.env.example` |
 
 Root `package.json`: orchestrazione `dev` / `dev:api` / `dev:client`. Dipendenze app in `server/` e `client/`.
@@ -39,7 +39,7 @@ cd server && npm test
 cd client && npm run build
 
 # Scrape (skill dedicata)
-# .cursor/skills/scrape-ilpalio/SKILL.md
+# .claude/skills/scrape-ilpalio/SKILL.md
 
 # Regolamento RAG (dopo pgvector + migration)
 cd server && npm run index-regolamento
@@ -143,7 +143,7 @@ Prima di alterare schema: leggere CHANGELOG e colonne domain-specific sopra; non
 
 | Skill | Quando |
 |-------|--------|
-| `.cursor/skills/scrape-ilpalio/` | scrape / import / backfill da ilpalio.siena.it |
+| `.claude/skills/scrape-ilpalio/` | scrape / import / backfill da ilpalio.siena.it |
 | Skill Postgres dell’utente (`~/.agents/skills/postgres`) | query diagnostiche, migration release — con profile appropriato |
 
 Per scrape: seguire la skill (non reinventare CLI o URL).

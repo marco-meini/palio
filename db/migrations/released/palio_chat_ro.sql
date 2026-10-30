@@ -26,7 +26,8 @@ GRANT SELECT ON TABLE
   priori,
   palio_partecipazioni,
   palio_partecipazione_mangini,
-  contrada_rivalita
+  contrada_rivalita,
+  regolamento_chunks
 TO palio_chat_ro;
 
 COMMIT;

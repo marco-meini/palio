@@ -30,6 +30,7 @@
 - `regolamento_chunks` — chunk testo regolamento + embedding `vector(384)` (modello e5-small)
 - Richiede estensione `vector` ([`db/bootstrap/03_pgvector.sql`](../bootstrap/03_pgvector.sql) come superuser)
 - Popolamento: `cd server && npm run index-regolamento`
+- Grant `SELECT` a `palio_chat_ro` (e DML a `app_palio`) se i ruoli esistono
 
 ### dimmelo_users.sql
 - `dimmelo_users` — email (unique, lowercase), `display_name`, `created_at`; seed Marco
