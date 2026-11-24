@@ -1,177 +1,87 @@
 import type { Request, Response } from 'express';
 import { Abstract_Controller } from './abstract.controller.js';
-import {
-  buildGoogleAuthUrl,
-  buildMobileAuthRedirect,
-  clearSessionCookie,
-  createSessionToken,
-  exchangeGoogleCode,
-  extractSessionToken,
-  fetchGoogleUserInfo,
-  hasGoogleOAuthCredentials,
-  maskEmailForDisplay,
-  normalizeEmail,
-  OAUTH_STATE_MOBILE,
-  resolveAuthorizedUser,
-  setSessionCookie,
-} from '../lib/auth/session.js';
-import { findDimmeloUserByEmail } from '../lib/dimmelo-users.js';
+import type { Environment } from '../environment.js';
+import { currentUser } from '../lib/auth/auth-guard.js';
+import { toCurrentUserDto } from '../lib/auth/auth-mapper.js';
+import type { SignedIn } from '../lib/auth/auth-service.js';
+import { LOGIN_COOKIE, LOGIN_COOKIE_PATH, SESSION_COOKIE } from '../lib/auth/auth-types.js';
+import { emailFrom, isEmail } from '../lib/auth/email.js';
+import { decodeLoginState, encodeLoginState, LOGIN_STATE_TTL_MS } from '../lib/auth/login-state.js';
+import { parseCredential } from '../lib/auth/passkey-credential.js';
+import { badRequest, unauthorized } from '../lib/http-error.js';
 
+/**
+ * Accesso con passkey nella pagina di palio, uscita, utente corrente e recupero dell'accesso.
+ * Montato su `/api/auth`.
+ */
 export class AuthController extends Abstract_Controller {
-  constructor(env: import('../environment.js').Environment) {
-    super(env, 'api/auth');
-    this.router.get('/me', this.getMe.bind(this));
-    this.router.get('/logout', this.getLogout.bind(this));
-    this.router.get('/google', this.getGoogle.bind(this));
-    this.router.get('/google/callback', this.getGoogleCallback.bind(this));
-    this.validateAuthConfig();
+  constructor(env: Environment) {
+    super(env, 'auth');
+    const { guard } = env.auth;
+    this.router.post('/passkey/start', guard.public(), this.passkeyStart.bind(this));
+    this.router.post('/passkey/finish', guard.public(), this.passkeyFinish.bind(this));
+    this.router.post('/logout', guard.public(), this.logout.bind(this));
+    this.router.get('/me', guard.anyUser(), this.me.bind(this));
+    this.router.post('/recovery', guard.public(), this.recovery.bind(this));
   }
 
-  private validateAuthConfig(): void {
-    const { auth } = this.env.config;
-    if (!auth?.enabled) return;
-
-    if (!auth.sessionSecret || auth.sessionSecret.length < 32) {
-      throw new Error(
-        'auth.sessionSecret deve essere impostato (≥32 caratteri) quando auth.enabled è true',
-      );
-    }
-
-    if (!this.env.pgConnection) {
-      throw new Error(
-        'config.db è richiesto quando auth.enabled è true (allowlist utenti in dimmelo_users)',
-      );
-    }
-
-    if (!hasGoogleOAuthCredentials(auth.google)) {
-      console.warn(
-        'auth.enabled è true ma Google OAuth non è configurato: imposta GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET o GOOGLE_OAUTH_JSON_PATH in .env',
-      );
-    }
-  }
-
-  private isMobileOAuth(req: Request): boolean {
-    if (req.query.client === 'mobile') return true;
-    return req.query.state === OAUTH_STATE_MOBILE;
-  }
-
-  private redirectOAuthError(
-    res: Response,
-    auth: import('../config.js').AppConfig['auth'],
-    isMobile: boolean,
-    error: string,
-    extra: Record<string, string> = {},
-  ): void {
-    if (isMobile) {
-      res.redirect(buildMobileAuthRedirect(auth.mobileRedirectUri, { error, ...extra }));
-      return;
-    }
-    const errorUrl = new URL('/login', auth.publicAppUrl);
-    errorUrl.searchParams.set('error', error);
-    for (const [key, value] of Object.entries(extra)) {
-      errorUrl.searchParams.set(key, value);
-    }
-    res.redirect(errorUrl.toString());
-  }
-
-  private async getMe(req: Request, res: Response): Promise<void> {
-    const { auth } = this.env.config;
-    if (!auth?.enabled) {
-      res.send({ email: null, name: null, authEnabled: false });
-      return;
-    }
-
-    const token = extractSessionToken(req);
-    const user = await resolveAuthorizedUser(this.env.pgConnection, token, auth);
-    if (!user) {
-      res.status(401).send({ error: 'Non autenticato' });
-      return;
-    }
-
-    res.send({
-      email: user.email,
-      name: user.name,
-      authEnabled: true,
+  /**
+   * Inizio dell'accesso con passkey. Restituisce la challenge da far firmare al browser e
+   * tiene la sessione ZITADEL in un cookie firmato, valido pochi minuti.
+   */
+  private async passkeyStart(req: Request, res: Response): Promise<void> {
+    const { auth, config } = this.env.auth;
+    const email = emailFrom(req.body);
+    if (!isEmail(email)) throw badRequest('Email non valida');
+    const { options, state } = await auth.startLogin(email, req.ip ?? 'unknown');
+    res.cookie(LOGIN_COOKIE, encodeLoginState(state, config.cookieSecret), {
+      httpOnly: true,
+      secure: config.secureCookies,
+      sameSite: 'strict',
+      path: LOGIN_COOKIE_PATH,
+      maxAge: LOGIN_STATE_TTL_MS,
     });
+    res.send({ options });
   }
 
-  private async getLogout(_req: Request, res: Response): Promise<void> {
-    clearSessionCookie(res);
-    res.send({ ok: true });
+  /** Fine dell'accesso: se la passkey è valida apre la sessione di palio. */
+  private async passkeyFinish(req: Request, res: Response): Promise<void> {
+    const { auth, config } = this.env.auth;
+    const raw = req.cookies?.[LOGIN_COOKIE] as string | undefined;
+    res.clearCookie(LOGIN_COOKIE, { path: LOGIN_COOKIE_PATH });
+    const state = raw ? decodeLoginState(raw, config.cookieSecret) : null;
+    if (!state) throw unauthorized('Accesso scaduto: riprova.');
+    const credential = parseCredential((req.body as { credential?: unknown } | null)?.credential);
+    const signedIn = await auth.finishLogin(state, credential, req.get('user-agent') ?? null);
+    this.startSession(res, signedIn);
   }
 
-  private async getGoogle(req: Request, res: Response): Promise<void> {
-    const { auth } = this.env.config;
-    if (!auth?.enabled) {
-      res.status(404).send({ error: 'Auth disabilitata' });
-      return;
-    }
-
-    if (!hasGoogleOAuthCredentials(auth.google)) {
-      res.status(503).send({
-        error:
-          'Google OAuth non configurato. Imposta GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET o GOOGLE_OAUTH_JSON_PATH in .env',
-      });
-      return;
-    }
-
-    const isMobile = this.isMobileOAuth(req);
-    res.redirect(
-      buildGoogleAuthUrl(auth, isMobile ? { state: OAUTH_STATE_MOBILE } : {}),
-    );
+  /** Chiude la sessione su questo dispositivo. */
+  private async logout(req: Request, res: Response): Promise<void> {
+    const { auth, sessions } = this.env.auth;
+    await auth.logout(req.cookies?.[SESSION_COOKIE] as string | undefined);
+    res.clearCookie(SESSION_COOKIE, sessions.cookieOptions());
+    res.status(204).end();
   }
 
-  private async getGoogleCallback(req: Request, res: Response): Promise<void> {
-    const { auth } = this.env.config;
-    if (!auth?.enabled) {
-      res.status(404).send({ error: 'Auth disabilitata' });
-      return;
-    }
+  /** Utente corrente con i suoi permessi effettivi (401 se non autenticato). */
+  private me(req: Request, res: Response): void {
+    res.send(toCurrentUserDto(currentUser(req)));
+  }
 
-    if (!hasGoogleOAuthCredentials(auth.google)) {
-      res.status(503).send({
-        error:
-          'Google OAuth non configurato. Imposta GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET o GOOGLE_OAUTH_JSON_PATH in .env',
-      });
-      return;
-    }
+  /**
+   * Chi lo usa non riesce ad accedere. Risponde sempre 202 senza dire se l'email è censita;
+   * il link arriva solo all'indirizzo registrato. Limiti per IP e per email.
+   */
+  private recovery(req: Request, res: Response): void {
+    const email = emailFrom(req.body);
+    if (!isEmail(email)) throw badRequest('Email non valida');
+    this.env.auth.recovery.request(email, req.ip ?? 'unknown');
+    res.status(202).end();
+  }
 
-    const isMobile = this.isMobileOAuth(req);
-    const code = typeof req.query.code === 'string' ? req.query.code : '';
-    if (!code) {
-      this.redirectOAuthError(res, auth, isMobile, 'oauth_failed');
-      return;
-    }
-
-    try {
-      const { access_token } = await exchangeGoogleCode(auth, code);
-      const userInfo = await fetchGoogleUserInfo(access_token);
-      const email = normalizeEmail(userInfo.email);
-      const row = await findDimmeloUserByEmail(this.env.pgConnection, email);
-
-      if (!row) {
-        const masked = maskEmailForDisplay(email);
-        console.warn(`Google login denied: email not in dimmelo_users (${masked || 'missing'})`);
-        this.redirectOAuthError(res, auth, isMobile, 'access_denied', masked ? { email: masked } : {});
-        return;
-      }
-
-      const sessionToken = await createSessionToken(
-        { email: row.email, name: row.display_name },
-        auth.sessionSecret,
-        auth.sessionTtlSeconds,
-      );
-      setSessionCookie(res, auth, sessionToken);
-
-      if (isMobile) {
-        res.redirect(buildMobileAuthRedirect(auth.mobileRedirectUri, { token: sessionToken }));
-        return;
-      }
-
-      res.redirect(auth.publicAppUrl);
-    } catch (err) {
-      console.error('Google OAuth callback failed', err);
-      this.redirectOAuthError(res, auth, isMobile, 'oauth_failed');
-    }
+  private startSession(res: Response, { user, session }: SignedIn): void {
+    res.cookie(SESSION_COOKIE, session.token, this.env.auth.sessions.cookieOptions(session.expiresAt));
+    res.send(toCurrentUserDto(user));
   }
 }

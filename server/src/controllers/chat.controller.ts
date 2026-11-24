@@ -1,6 +1,5 @@
 import type { Request, Response } from 'express';
 import { Abstract_Controller } from './abstract.controller.js';
-import { createRequireAuth } from '../lib/auth/require-auth.js';
 import { runChatAgent } from '../lib/chat-agent.js';
 
 function formatChatError(err: unknown): string {
@@ -21,12 +20,9 @@ function writeSse(res: Response, event: string, data: unknown): void {
 }
 
 export class ChatController extends Abstract_Controller {
-  private requireAuth: ReturnType<typeof createRequireAuth>;
-
   constructor(env: import('../environment.js').Environment) {
     super(env, 'api');
-    this.requireAuth = createRequireAuth(env);
-    this.router.post('/chat', this.requireAuth, this.postChat.bind(this));
+    this.router.post('/chat', env.auth.guard.require('chat.use'), this.postChat.bind(this));
   }
 
   private async postChat(req: Request, res: Response): Promise<void> {

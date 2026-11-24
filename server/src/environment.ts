@@ -1,5 +1,7 @@
 import type { PoolConfig } from 'pg';
+import { loadAuthConfig } from './auth-config.js';
 import { initConfig } from './config.js';
+import { type AuthServices, createAuthServices } from './lib/auth/auth-services.js';
 import { repoRoot, serverRoot } from './paths.js';
 import { resolveApiPgConfig, resolveChatPgConfig } from './lib/db-config.js';
 import { PgClientManager } from './lib/pg-client-manager.js';
@@ -13,10 +15,13 @@ export class Environment {
   pgConnection!: PgClientManager;
   chatPgConnection!: PgClientManager;
   pgModels!: PgModels;
+  /** Login con passkey, sessioni, utenti (solo API). */
+  auth!: AuthServices;
 
   async init(): Promise<void> {
     this.config = await initConfig();
     this.pgConnection = new PgClientManager(resolveApiPgConfig() as PoolConfig);
+    this.auth = createAuthServices(this.pgConnection, loadAuthConfig());
     this.chatPgConnection = new PgClientManager(resolveChatPgConfig() as PoolConfig);
     initPostgresCliPool(this.chatPgConnection);
     this.pgModels = new PgModels(this.pgConnection);

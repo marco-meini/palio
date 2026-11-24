@@ -60,8 +60,8 @@ export class ChatApiService {
     if (!response.ok) {
       let message = `Errore HTTP ${response.status}`;
       try {
-        const json = (await response.json()) as { error?: string };
-        if (json.error) message = json.error;
+        const json = (await response.json()) as { error?: string; message?: string };
+        if (json.error || json.message) message = (json.error ?? json.message)!;
       } catch {
         // ignore
       }

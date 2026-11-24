@@ -20,7 +20,7 @@ cd server && npm install
 cd client && npm install
 
 cp .env.example .env
-# Modifica .env: DATABASE_URL, ANTHROPIC_API_KEY, auth se serve
+# Modifica .env: DATABASE_URL, ANTHROPIC_API_KEY, COOKIE_SECRET, ZITADEL_* (vedi Autenticazione)
 ```
 
 Variabili principali (elenco completo in [`.env.example`](.env.example)):
@@ -30,8 +30,10 @@ Variabili principali (elenco completo in [`.env.example`](.env.example)):
 | `DATABASE_URL` | `postgresql://...@127.0.0.1:5432/palio` | Pool API / scraper / auth |
 | `CHAT_DATABASE_URL` | (opzionale) | Pool read-only chat (`palio_chat_ro`) |
 | `ANTHROPIC_API_KEY` | `sk-ant-...` | Obbligatoria per la chat |
-| `AUTH_ENABLED` | `false` | `true` in produzione |
-| `CORS_ORIGIN` | `http://localhost:4200` | Origine Angular dev |
+| `APP_URL` | `http://localhost:4200` | URL pubblico del frontend (origin ammesso, link d'invito) |
+| `COOKIE_SECRET` | `openssl rand -base64 48` | Firma del cookie di login (≥ 32 caratteri) |
+| `ZITADEL_URL` / `ZITADEL_TOKEN` | `http://localhost:8081` / PAT | Provider di identità e token del service account di palio |
+| `SMTP_*` | (vuoto) | Email di recupero accesso; senza, in dev il link finisce nel log |
 | `SERVER_PORT` | `3001` | Porta API |
 
 Produzione: stesse chiavi in `.env.production` (vedi [`.env.production.example`](.env.production.example)).
@@ -72,45 +74,65 @@ npm run build       # tsc del server + build Angular
 
 Sono gli stessi controlli della CI (vedi [CI e rilascio in produzione](#ci-e-rilascio-in-produzione)).
 
-### Autenticazione Google (OAuth)
+### Autenticazione (passkey e ZITADEL)
 
-Dimmelo può richiedere login Google prima di chiamare `POST /api/chat`. Il backend gestisce l’OAuth Authorization Code, emette un cookie di sessione **httpOnly** (JWT firmato con `jose`) e controlla che l’email sia presente in Postgres (`dimmelo_users`).
+Stesso metodo di dimora, con utenti e tabelle propri di palio (`app_user`, `user_permission`,
+`user_session` nel DB `palio`). Si entra con una **passkey** (Face ID, Touch ID, chiavetta),
+sempre nelle pagine di Dimmelo: email, poi «Accedi con passkey». Le identità stanno su
+**ZITADEL** (`https://id.marcomeini.it`, lo stesso di dimora), usato in modo *headless*: palio
+chiede a ZITADEL la challenge, il browser la firma con la passkey e ZITADEL verifica la firma.
+Poi palio apre la propria sessione server-side e il browser riceve solo un cookie httpOnly
+(`palio_sid`). L'utente non vede mai ZITADEL.
 
-In sviluppo locale, lascia `AUTH_ENABLED=false` in `.env` per usare la chat senza configurare Google.
+**Gli utenti si gestiscono da Dimmelo**, pagina *Utenti*: anagrafica, contatti, permessi,
+invito, disattivazione, eliminazione.
 
-#### Google Cloud Console
+- **Invito.** Creando un utente, palio genera un **link d'accesso** monouso (`/invito/…`). Chi
+  lo apre preme *Crea la passkey* ed entra subito. Alla prima apertura palio collega l'account
+  ZITADEL con la stessa email, se esiste già (identità condivisa con dimora); altrimenti lo crea.
+  Ogni utente ha al più un link valido; in DB c'è solo l'hash.
+- **Recupero in autonomia.** *Non riesci ad accedere?*: chi è censito e attivo riceve per email
+  un link dello stesso tipo, valido `RECOVERY_TTL_MINUTES` (60 minuti). La risposta è sempre la
+  stessa (non si scopre quali email sono registrate) e le richieste sono limitate per IP e per
+  indirizzo. Serve SMTP (`SMTP_*`); senza, in sviluppo il testo dell'email finisce nel log dell'API.
+- **Disattivazione.** Chiude subito le sessioni e annulla il link d'accesso. L'account ZITADEL
+  resta, perché serve anche a dimora.
+- **Eliminazione.** Toglie l'utente da palio con permessi e sessioni; l'account ZITADEL e le
+  passkey restano. Non si può eliminare sé stessi né l'ultimo amministratore attivo.
+- **Dominio delle passkey** (`PASSKEY_RP_ID`): di default l'host di `APP_URL`
+  (`dimmelo.marcomeini.it`). Le passkey di palio sono quindi distinte da quelle di dimora: ognuno
+  ne crea una anche per palio, con lo stesso account ZITADEL.
 
-1. Crea o seleziona un progetto → **APIs & Services** → **OAuth consent screen** (External; aggiungi test users se l’app è in testing).
-2. **Credentials** → **Create credentials** → **OAuth 2.0 Client ID** → tipo **Web application**.
-3. **Authorized redirect URIs**:
-   - Dev: `http://localhost:3001/api/auth/google/callback`
-   - Prod: `https://<tuo-dominio>/api/auth/google/callback` (stesso host del proxy API)
-4. Credenziali OAuth (scegli una opzione):
-   - **Variabili `.env`:** `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`
-   - **File JSON:** copia in `server/config/google-oauth.json` e imposta `GOOGLE_OAUTH_JSON_PATH`
-5. Genera un segreto sessione: `openssl rand -base64 48` → `AUTH_SESSION_SECRET` in `.env`.
-6. Applica la migration utenti e aggiungi account autorizzati (vedi sotto **Utenti Dimmelo**).
-   - Deve essere l’**email principale del profilo Google** usato al login.
-   - Se vedi *«account Google non è autorizzato»* con `Account usato: nome@***`, verifica su [account.google.com](https://myaccount.google.com) l’email e inseriscila in `dimmelo_users`.
+**Permessi.** Ogni utente ha permessi singoli, assegnati dalla pagina *Utenti*:
 
-#### Utenti Dimmelo (`dimmelo_users`)
+- `chat.use` — usare la chat Dimmelo;
+- `users.view` — vedere gli utenti; `users.manage` — gestirli (comprende vedere).
 
-Migration: `0001_dimmelo_users.sql` in [`db/migrations/`](db/migrations/) (in `released/` dopo il rilascio; include seed per `marco.meini.1979@gmail.com` / display name `Marco`). In produzione la esegue `scripts/release.sh`.
+Il flag *Amministratore* dà tutti i permessi, anche quelli delle funzioni future. Chi gestisce
+gli utenti senza essere amministratore assegna solo i permessi che ha anche lui e non tocca gli
+amministratori; nessuno cambia i propri permessi e resta sempre almeno un amministratore.
+Entra solo chi è censito in palio ed è attivo. Ogni endpoint dichiara cosa serve
+(`guard.public()`, `guard.anyUser()`, `guard.require(...)`); le richieste non-GET devono avere
+`Origin` uguale ad `APP_URL` (protezione CSRF).
 
-```bash
-# In locale, esempio con psql (adatta host/db/user)
-psql -h 127.0.0.1 -U postgres -d app -f db/migrations/0001_dimmelo_users.sql
-```
+**Utenti di partenza.** La migrazione `0003_auth.sql` crea gli utenti da quelli di
+`dimmelo_users` (il più vecchio è amministratore, tutti hanno `chat.use`). Nessuno ha ancora
+l'account ZITADEL collegato: al primo accesso ognuno usa *Non riesci ad accedere?* (serve SMTP)
+o un invito creato da un amministratore.
 
-Aggiungere un utente autorizzato:
+#### Configurazione (una volta)
 
-```sql
-INSERT INTO dimmelo_users (email, display_name)
-VALUES ('nome.cognome@gmail.com', 'Nome')
-ON CONFLICT (email) DO UPDATE SET display_name = EXCLUDED.display_name;
-```
-
-L’email va in **minuscolo** (vincolo `CHECK`). Il `display_name` compare nell’header chat (`GET /api/auth/me` → `name`).
+1. **Service account di palio su ZITADEL.** Nella console (`<ZITADEL_URL>/ui/console`, utente
+   admin) crea un service user con username `palio`; tra i *Managers* dell'istanza
+   assegnagli lo stesso ruolo del service account `dimora` (`IAM_OWNER`); infine, nella sua
+   scheda, crea un *Personal Access Token* senza scadenza. Il token va in `ZITADEL_TOKEN`: ha poteri da amministratore, resta solo nel backend.
+   Un account a parte (invece del token di dimora) si può revocare senza toccare dimora.
+2. **`.env` / `.env.production`:** `APP_URL`, `COOKIE_SECRET` (`openssl rand -base64 48`),
+   `ZITADEL_URL`, `ZITADEL_TOKEN`, eventualmente `ZITADEL_ORG_ID`, e gli `SMTP_*` (gli stessi
+   di dimora, con `SMTP_FROM` di Dimmelo).
+3. **Sviluppo:** serve un ZITADEL in esecuzione, come per dimora: quello locale di dimora
+   (`infra/zitadel`, `http://localhost:8081`) con un service account `palio` creato come al punto 1.
+   `APP_URL=http://localhost:4200` (le passkey valgono per `localhost`).
 
 #### Deploy produzione (Docker + Caddy)
 
@@ -122,7 +144,7 @@ Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, conta
    ```bash
    cp .env.production.example .env.production
    # DATABASE_URL=postgresql://postgres:PASSWORD@postgres:5432/palio
-   # AUTH_*, ANTHROPIC_API_KEY, GOOGLE_CLIENT_ID/SECRET (o volume google-oauth.json)
+   # ANTHROPIC_API_KEY, APP_URL, COOKIE_SECRET, ZITADEL_URL/ZITADEL_TOKEN, SMTP_* (vedi Autenticazione)
    ```
 2. Abilita pgvector e crea la tabella regolamento (una tantum), poi indicizza il PDF:
    ```bash
@@ -135,9 +157,8 @@ Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, conta
    docker exec -i postgres psql -U postgres -d palio -v ON_ERROR_STOP=1 < db/bootstrap/04_owner_app_palio.sql
    ```
 3. Caddy — al primo rilascio aggiungi il blocco in [`docker/caddy-dimmelo.snippet`](docker/caddy-dimmelo.snippet) a `/etc/caddy/Caddyfile` e ricarica Caddy (`sudo systemctl reload caddy`).
-4. Google OAuth redirect URI: `https://dimmelo.marcomeini.it/api/auth/google/callback`
-5. Rilascio con `scripts/release.sh`: vedi [CI e rilascio in produzione](#ci-e-rilascio-in-produzione).
-6. Verifica: `curl -s https://dimmelo.marcomeini.it/api/health`
+4. Rilascio con `scripts/release.sh`: vedi [CI e rilascio in produzione](#ci-e-rilascio-in-produzione).
+5. Verifica: `curl -s https://dimmelo.marcomeini.it/api/health`
 
 In Docker il backend usa **`DATABASE_URL`** da `.env.production`. In dev: `.env` nella root del repo.
 
@@ -145,19 +166,23 @@ In Docker il backend usa **`DATABASE_URL`** da `.env.production`. In dev: `.env`
 
 #### Deploy pubblico (HTTPS) — note
 
-- `AUTH_PUBLIC_APP_URL` e `AUTH_PUBLIC_API_URL` = `https://dimmelo.marcomeini.it` (stesso host; il FE nginx inoltra `/api` al BE).
-- `CORS_ORIGIN` = stesso URL.
+- `APP_URL` = `https://dimmelo.marcomeini.it` (stesso host per frontend e API: nginx inoltra `/api` al BE, niente CORS). Con `https` i cookie sono `Secure`.
 - Non esporre Postgres su Internet. Binding host: **`127.0.0.1:9634→5432`** (rete Docker `postgres` per l’app). Dettagli e runbook: [`docker/harden-postgres.md`](docker/harden-postgres.md).
 - Dev locale verso il DB sul VPS: tunnel SSH [`docker/ssh-tunnel-db.sh`](docker/ssh-tunnel-db.sh), poi `DATABASE_URL` / skill profile su `127.0.0.1:9634`.
 
-Route auth:
+Route di autenticazione e utenti:
 
-| Metodo | Path | Descrizione |
-|--------|------|-------------|
-| GET | `/api/auth/google` | Avvia login Google |
-| GET | `/api/auth/google/callback` | Callback OAuth (redirect interno) |
-| GET | `/api/auth/logout` | Cancella cookie sessione |
-| GET | `/api/auth/me` | `{ email, name, authEnabled }` per l’UI |
+| Metodo | Path | Accesso | Descrizione |
+|--------|------|---------|-------------|
+| POST | `/api/auth/passkey/start` | pubblico | Challenge per l'email indicata |
+| POST | `/api/auth/passkey/finish` | pubblico | Verifica la passkey e apre la sessione |
+| POST | `/api/auth/logout` | pubblico | Chiude la sessione su questo dispositivo |
+| GET | `/api/auth/me` | utente | Utente corrente e permessi effettivi |
+| POST | `/api/auth/recovery` | pubblico | Link di recupero via email (sempre 202) |
+| GET/POST | `/api/invites/:token[/passkey/start\|finish]` | pubblico (token) | Link d'accesso: crea la passkey ed entra |
+| GET | `/api/users`, `/api/users/:id`, `/api/permissions` | `users.view` | Elenco, scheda, catalogo permessi |
+| POST/PUT/DELETE | `/api/users[/:id[/invite\|disable\|enable]]` | `users.manage` | Gestione utenti |
+| POST | `/api/chat` | `chat.use` | Chat |
 
 `GET /api/health` resta pubblico (monitoring).
 
@@ -472,7 +497,7 @@ Opzioni in `.env`: `REGOLAMENTO_TOP_K`, `REGOLAMENTO_MIN_SCORE`.
 | Parte | Tecnologie |
 |-------|------------|
 | Frontend | Angular 21, Tailwind CSS 4, UI stile Spartan/shadcn (Tailwind) |
-| Backend | Fastify, Vercel AI SDK, `@ai-sdk/anthropic` |
+| Backend | Express 5, Vercel AI SDK, `@ai-sdk/anthropic` |
 | DB | Postgres skill CLI (`query run`, `schema inspect`, `query find`) |
 | Regolamento | Embedding locali (`@xenova/transformers`), pgvector su Postgres, OCR (`tesseract.js` + `pdftoppm`) |
 
@@ -482,4 +507,4 @@ Per aggiungere componenti [Spartan-ng](https://www.spartan.ng) in seguito: `cd c
 
 La chat non può eseguire `INSERT`, `UPDATE`, `DELETE`, DDL o migration: solo `SELECT` / `WITH` / `EXPLAIN`.
 
-Con `auth.enabled: true`, solo le email in `dimmelo_users` possono avviare richieste chat (cookie httpOnly; nessun token Google nel browser). In produzione usa sempre HTTPS e `auth.enabled: true`.
+Solo gli utenti censiti e attivi con il permesso `chat.use` possono usare la chat (passkey via ZITADEL, sessione server-side in cookie httpOnly; nessun token nel browser). Le tabelle di autenticazione non sono leggibili dal ruolo della chat (`palio_chat_ro`). In produzione usa sempre HTTPS.

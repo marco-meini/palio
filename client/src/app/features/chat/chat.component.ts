@@ -8,8 +8,7 @@ import {
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
-import { AuthService } from '../../core/services/auth.service';
+import { AuthService } from '../../core/auth/auth.service';
 import {
   ChatApiService,
   ChatMessage,
@@ -35,18 +34,7 @@ Scrivi pure la tua domanda qui sotto.`,
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="flex h-full min-h-screen flex-col bg-gradient-to-b from-amber-50/80 to-stone-100">
-      <header
-        class="border-b border-stone-200/80 bg-white/80 px-4 py-4 backdrop-blur sm:px-6"
-      >
-        <div class="mx-auto max-w-3xl">
-          <h1 class="text-lg font-semibold text-stone-900">Dimmelo</h1>
-          @if (displayName()) {
-            <p class="text-sm text-stone-600">Ciao, {{ displayName() }}</p>
-          }
-          <p class="text-sm text-stone-500">Database Palio di Siena</p>
-        </div>
-      </header>
+    <div class="flex h-full flex-col">
 
       <div
         #scrollContainer
@@ -152,9 +140,7 @@ Scrivi pure la tua domanda qui sotto.`,
 export class ChatComponent implements OnDestroy {
   private readonly auth = inject(AuthService);
   private readonly chatApi = new ChatApiService();
-  private readonly router = inject(Router);
 
-  protected readonly displayName = this.auth.displayName;
   private abortController: AbortController | null = null;
 
   protected readonly scrollContainer = viewChild<ElementRef<HTMLElement>>('scrollContainer');
@@ -247,9 +233,7 @@ export class ChatComponent implements OnDestroy {
           );
         },
         onError: (message) => this.error.set(message),
-        onUnauthorized: () => {
-          void this.router.navigate(['/login']);
-        },
+        onUnauthorized: () => this.auth.sessionExpired(),
       });
     } catch (err) {
       if (!(err instanceof DOMException && err.name === 'AbortError')) {

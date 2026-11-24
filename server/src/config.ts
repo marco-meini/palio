@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { homedir } from 'node:os';
-import { mergeGoogleOAuthCredentials } from './lib/google-oauth.js';
 import { loadEnvFiles } from './load-env.js';
 import { repoRoot } from './paths.js';
 
@@ -23,21 +22,6 @@ export interface AppConfig {
   };
   server: {
     port: number;
-    /** Allowed CORS origins (comma-separated CORS_ORIGIN). */
-    corsOrigins: string[];
-  };
-  auth: {
-    enabled: boolean;
-    sessionSecret: string;
-    sessionTtlSeconds: number;
-    google: {
-      clientId: string;
-      clientSecret: string;
-    };
-    publicApiUrl: string;
-    publicAppUrl: string;
-    /** Deep-link base for mobile OAuth success/error (e.g. dimmelo://auth). */
-    mobileRedirectUri: string;
   };
   /** Fallback skill Postgres CLI (se il driver pg non è disponibile). */
   postgres: {
@@ -65,20 +49,7 @@ function envString(raw: string | undefined, defaultValue = ''): string {
   return raw;
 }
 
-function envCsv(raw: string | undefined, defaultValue: string[]): string[] {
-  const value = envString(raw);
-  if (!value) return defaultValue;
-  return value
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
 function buildConfigFromEnv(): AppConfig {
-  const googleOAuthPath =
-    process.env.GOOGLE_OAUTH_JSON_PATH ??
-    path.join(repoRoot, 'server/config/google-oauth.json');
-
   return {
     anthropic: {
       apiKey: envString(process.env.ANTHROPIC_API_KEY),
@@ -98,19 +69,6 @@ function buildConfigFromEnv(): AppConfig {
     },
     server: {
       port: envInt(process.env.SERVER_PORT, 3001),
-      corsOrigins: envCsv(process.env.CORS_ORIGIN, [
-        'http://localhost:4200',
-        'http://localhost:8081',
-      ]),
-    },
-    auth: {
-      enabled: envBool(process.env.AUTH_ENABLED, false),
-      sessionSecret: envString(process.env.AUTH_SESSION_SECRET),
-      sessionTtlSeconds: envInt(process.env.AUTH_SESSION_TTL_SECONDS, 604800),
-      google: mergeGoogleOAuthCredentials(undefined, googleOAuthPath),
-      publicApiUrl: envString(process.env.AUTH_PUBLIC_API_URL, 'http://localhost:3001'),
-      publicAppUrl: envString(process.env.AUTH_PUBLIC_APP_URL, 'http://localhost:4200'),
-      mobileRedirectUri: envString(process.env.AUTH_MOBILE_REDIRECT_URI, 'dimmelo://auth'),
     },
     postgres: {
       cli: envString(

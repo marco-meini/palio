@@ -1,0 +1,113 @@
+import { Component, computed, input, model } from '@angular/core';
+import type { Permission, PermissionSectionDto } from '../../core/auth/dto';
+
+/**
+ * Permessi di un utente: interruttore "Amministratore" e, per ogni sezione dell'app,
+ * le caselle dei suoi permessi (Vedere, Modificare…). Modificare comprende vedere: spuntarlo
+ * spunta anche vedere, togliere vedere toglie anche modificare.
+ */
+@Component({
+  selector: 'app-permission-picker',
+  template: `
+    <label
+      class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 text-sm has-[:checked]:border-amber-600 has-[:checked]:bg-amber-50 has-[:disabled]:cursor-not-allowed"
+    >
+      <input
+        type="checkbox"
+        class="mt-0.5 size-4 accent-amber-700"
+        [checked]="isAdmin()"
+        [disabled]="disabled() || !canSetAdmin()"
+        (change)="isAdmin.set(!isAdmin())"
+      />
+      <span>
+        <span class="font-medium text-stone-900">Amministratore</span>
+        <span class="block text-xs text-stone-500">
+          Tutti i permessi, anche quelli delle funzioni che verranno aggiunte.
+        </span>
+      </span>
+    </label>
+
+    <div class="mt-3 overflow-hidden rounded-lg border border-stone-200">
+      <table class="w-full text-sm">
+        <tbody class="divide-y divide-stone-100">
+          @for (section of catalog(); track section.key) {
+            <tr>
+              <th scope="row" class="w-1/3 px-3 py-2.5 text-left font-medium text-stone-800">
+                {{ section.label }}
+              </th>
+              <td class="px-3 py-2.5">
+                <div class="flex flex-wrap gap-x-5 gap-y-2">
+                  @for (permission of section.permissions; track permission.key) {
+                    <label
+                      class="flex cursor-pointer items-center gap-2 text-stone-700 has-[:disabled]:cursor-not-allowed has-[:disabled]:text-stone-400"
+                      [title]="permission.description"
+                    >
+                      <input
+                        type="checkbox"
+                        class="size-4 accent-amber-700"
+                        [checked]="isAdmin() || effective().has(permission.key)"
+                        [disabled]="isAdmin() || disabled() || !assignable(permission.key)"
+                        (change)="toggle(permission.key)"
+                      />
+                      {{ permission.label }}
+                    </label>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  `,
+})
+export class PermissionPicker {
+  readonly catalog = input.required<PermissionSectionDto[]>();
+  readonly isAdmin = model.required<boolean>();
+  readonly permissions = model.required<Permission[]>();
+  /** Tutto in sola lettura (es. i propri permessi, o chi può solo vedere). */
+  readonly disabled = input(false);
+  /** Solo un amministratore nomina amministratori. */
+  readonly canSetAdmin = input(false);
+  /** Permessi che chi modifica può assegnare (i suoi); `null` = tutti. */
+  readonly assignableBy = input<readonly Permission[] | null>(null);
+
+  private readonly implies = computed(() => {
+    const map = new Map<Permission, Permission[]>();
+    for (const section of this.catalog()) {
+      for (const p of section.permissions) map.set(p.key, p.implies);
+    }
+    return map;
+  });
+
+  /** Permessi assegnati più quelli impliciti. */
+  protected readonly effective = computed(() => this.expand(this.permissions()));
+
+  protected assignable(permission: Permission): boolean {
+    const own = this.assignableBy();
+    return !own || own.includes(permission);
+  }
+
+  protected toggle(permission: Permission): void {
+    const current = this.effective();
+    if (current.has(permission)) {
+      // togliendo un permesso si tolgono anche quelli che lo comprendono
+      this.permissions.set(
+        this.permissions().filter((p) => p !== permission && !this.expand([p]).has(permission)),
+      );
+    } else {
+      this.permissions.set([...this.permissions(), permission]);
+    }
+  }
+
+  private expand(granted: readonly Permission[]): Set<Permission> {
+    const result = new Set<Permission>();
+    const add = (p: Permission) => {
+      if (result.has(p)) return;
+      result.add(p);
+      (this.implies().get(p) ?? []).forEach(add);
+    };
+    granted.forEach(add);
+    return result;
+  }
+}
