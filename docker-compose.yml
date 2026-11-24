@@ -1,6 +1,7 @@
 services:
   server:
-    image: palio-server:${IMAGE_TAG:-latest}
+    # PALIO_IMAGE_PREFIX (es. ghcr.io/<owner>/) per usare le immagini pubblicate dalla CI
+    image: ${PALIO_IMAGE_PREFIX:-}palio-server:${PALIO_TAG:-latest}
     build:
       context: ./server
     env_file:
@@ -11,7 +12,7 @@ services:
       - dimmelo
 
   client:
-    image: palio-client:${IMAGE_TAG:-latest}
+    image: ${PALIO_IMAGE_PREFIX:-}palio-client:${PALIO_TAG:-latest}
     build:
       context: ./client
     depends_on:

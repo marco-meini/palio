@@ -1,0 +1,17 @@
+# Configurazione di scripts/release.sh, sul server: copiare in scripts/release.conf (non
+# versionato). Il .env.production dell'app sta nella root del repo.
+
+# Postgres: container, superuser e database. Le migrazioni si collegano come superuser ma
+# girano con il ruolo applicativo (PG_APP_ROLE), così tabelle e funzioni sono sue.
+PG_CONTAINER=postgres
+PG_SUPERUSER=postgres
+PG_DATABASE=palio
+PG_APP_ROLE=app_palio
+
+# Immagini pubblicate dalla CI (.github/workflows/ci.yml): richiede una volta
+#   docker login ghcr.io -u <utente GitHub>   (token classic con il solo permesso read:packages)
+# Vuoto = le immagini si costruiscono sul server (come con --build).
+IMAGE_PREFIX=ghcr.io/marco-meini/
+
+# Health check dopo il rilascio
+HEALTH_URL=https://dimmelo.marcomeini.it/api/health

@@ -8,3 +8,5 @@ server/config/config.mjs
 server/config/google-oauth.json
 .env.production
 .skills/postgres/config.toml
+
+scripts/release.conf

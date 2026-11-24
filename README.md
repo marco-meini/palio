@@ -62,10 +62,15 @@ Apri [http://localhost:4200](http://localhost:4200) e prova domande come:
 
 ### Test
 
+Dalla root (dopo `npm ci`, `npm ci --prefix server`, `npm ci --prefix client`):
+
 ```bash
-cd server && npm test          # parser + guardrail SQL read-only + auth
-cd client && npm run build     # build Angular
+npm run typecheck   # tsc di server e client
+npm test            # server: parser + guardrail SQL read-only + auth; client: vitest
+npm run build       # tsc del server + build Angular
 ```
+
+Sono gli stessi controlli della CI (vedi [CI e rilascio in produzione](#ci-e-rilascio-in-produzione)).
 
 ### Autenticazione Google (OAuth)
 
@@ -90,11 +95,11 @@ In sviluppo locale, lascia `AUTH_ENABLED=false` in `.env` per usare la chat senz
 
 #### Utenti Dimmelo (`dimmelo_users`)
 
-Migration: [`db/migrations/dimmelo_users.sql`](db/migrations/dimmelo_users.sql) (include seed per `marco.meini.1979@gmail.com` / display name `Marco`).
+Migration: `0001_dimmelo_users.sql` in [`db/migrations/`](db/migrations/) (in `released/` dopo il rilascio; include seed per `marco.meini.1979@gmail.com` / display name `Marco`). In produzione la esegue `scripts/release.sh`.
 
 ```bash
-# Esempio con psql (adatta host/db/user)
-psql -h 127.0.0.1 -U postgres -d app -f db/migrations/dimmelo_users.sql
+# In locale, esempio con psql (adatta host/db/user)
+psql -h 127.0.0.1 -U postgres -d app -f db/migrations/0001_dimmelo_users.sql
 ```
 
 Aggiungere un utente autorizzato:
@@ -111,30 +116,28 @@ L’email va in **minuscolo** (vincolo `CHECK`). Il `display_name` compare nell�
 
 Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, container FE/BE, Postgres in container Docker sulla rete `postgres`).
 
-**Prerequisiti VPS:** Docker, rete `postgres` con container DB collegato, DB `palio` ripristinato ([`docker/restore-palio-local.sh`](docker/restore-palio-local.sh)), migration [`dimmelo_users.sql`](db/migrations/dimmelo_users.sql).
+**Prerequisiti VPS:** Docker (utente nel gruppo `docker`), rete `postgres` con container DB collegato, DB `palio` ripristinato ([`docker/restore-palio-local.sh`](docker/restore-palio-local.sh)).
 
-1. Copia il progetto sul server (es. `~/palio`).
-2. Configura ambiente:
+1. Clona il repo sul server (`~/palio`) e configura l'ambiente:
    ```bash
    cp .env.production.example .env.production
    # DATABASE_URL=postgresql://postgres:PASSWORD@postgres:5432/palio
    # AUTH_*, ANTHROPIC_API_KEY, GOOGLE_CLIENT_ID/SECRET (o volume google-oauth.json)
    ```
-3. Abilita pgvector e crea la tabella regolamento (una tantum), poi indicizza il PDF:
+2. Abilita pgvector e crea la tabella regolamento (una tantum), poi indicizza il PDF:
    ```bash
    psql "$DATABASE_URL" -f db/bootstrap/03_pgvector.sql
    psql "$DATABASE_URL" -f db/migrations/released/regolamento_chunks.sql
    cd server && npm run index-regolamento
    ```
-4. Avvia stack (FE su `127.0.0.1:8080`, BE solo rete interna):
+   Una tantum, prima del primo rilascio: passa ad `app_palio` la proprietà delle tabelle (le migrazioni di `scripts/release.sh` girano con quel ruolo e possono modificare solo oggetti suoi). Idempotente:
    ```bash
-   chmod +x deploy.sh
-   ./deploy.sh
+   docker exec -i postgres psql -U postgres -d palio -v ON_ERROR_STOP=1 < db/bootstrap/04_owner_app_palio.sql
    ```
-   Lo script esegue sempre `git pull` prima del build. Tag immagini dal campo `version` di `package.json` (override: `--version` o `IMAGE_TAG`). Opzioni: `--skip-build`, `--skip-health`.
-5. Caddy — al primo deploy aggiungi il blocco in [`docker/caddy-dimmelo.snippet`](docker/caddy-dimmelo.snippet) a `/etc/caddy/Caddyfile` (con sudo). `./deploy.sh` ricarica Caddy automaticamente (`sudo systemctl reload caddy`) a ogni run.
-6. Google OAuth redirect URI: `https://dimmelo.marcomeini.it/api/auth/google/callback`
-7. Verifica: `curl -s https://dimmelo.marcomeini.it/api/health`
+3. Caddy — al primo rilascio aggiungi il blocco in [`docker/caddy-dimmelo.snippet`](docker/caddy-dimmelo.snippet) a `/etc/caddy/Caddyfile` e ricarica Caddy (`sudo systemctl reload caddy`).
+4. Google OAuth redirect URI: `https://dimmelo.marcomeini.it/api/auth/google/callback`
+5. Rilascio con `scripts/release.sh`: vedi [CI e rilascio in produzione](#ci-e-rilascio-in-produzione).
+6. Verifica: `curl -s https://dimmelo.marcomeini.it/api/health`
 
 In Docker il backend usa **`DATABASE_URL`** da `.env.production`. In dev: `.env` nella root del repo.
 
@@ -162,11 +165,13 @@ Route auth:
 
 - Bootstrap istanza: [`db/bootstrap/`](db/bootstrap/)
 - Schema iniziale contrade: [`db/dumps/initial_palio_schema.sql`](db/dumps/initial_palio_schema.sql)
-- Migration in sospeso: [`db/migrations/prerelease.sql`](db/migrations/prerelease.sql)
+- Script di schema: [`db/migrations/`](db/migrations/) (`NNNN_*.sql` in sospeso, già rilasciati in [`released/`](db/migrations/released/)); note in [`CHANGELOG.md`](db/migrations/CHANGELOG.md)
 
 Config Postgres locale (non versionata): `.skills/postgres/config.toml`
 
-### Applicare la migration pending
+### Script di schema
+
+Lo schema si gestisce con script SQL in `db/migrations/NNNN_descrizione.sql`, **eseguiti sempre a mano** in ordine (nessun automatismo: né l'app né i container li lanciano). In locale:
 
 ```bash
 export DB_PROJECT_ROOT="$PWD"
@@ -174,16 +179,70 @@ export POSTGRES_CLI="$HOME/.agents/skills/postgres/scripts/postgres"
 export DB_PROFILE=local
 
 "$POSTGRES_CLI" profile test
-"$POSTGRES_CLI" query run -f db/migrations/prerelease.sql
+"$POSTGRES_CLI" query run -f db/migrations/NNNN_descrizione.sql
 ```
 
-Se il DB aveva già la colonna `ordine`, lo script la rinomina in `canape`.
+Uno script già eseguito non va modificato: per cambiare lo schema se ne aggiunge uno nuovo.
 
-### Rilasciare la migration (dopo conferma)
+In produzione gli script li esegue `scripts/release.sh`, lanciato a mano: quelli già rilasciati stanno in `db/migrations/released/`.
+
+## CI e rilascio in produzione
+
+**Versione.** Si rilascia una versione, cioè un tag `vX.Y.Z` uguale alla `version` del `package.json` di root. In locale, su `main` pulito:
 
 ```bash
-"$POSTGRES_CLI" migration release --summary "Add palii and partecipazioni schema"
+npm version patch          # oppure minor / major: aggiorna package.json, fa commit e tag
+git push --follow-tags     # invia commit e tag
 ```
+
+**CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml), GitHub Actions). Parte solo al push di un tag `vX.Y.Z`, non a ogni push. Esegue typecheck, test e build (Node da [`.nvmrc`](.nvmrc), come le immagini Docker); se passano, pubblica su GitHub Container Registry le immagini con la versione nel tag:
+
+- `ghcr.io/marco-meini/palio-server:X.Y.Z`
+- `ghcr.io/marco-meini/palio-client:X.Y.Z`
+
+Se il tag non corrisponde a `package.json`, la CI fallisce. La CI non accede al server né al database: il rilascio resta manuale.
+
+**Rilascio.**
+
+Produzione: Dimmelo su `https://dimmelo.marcomeini.it`, dietro Caddy sul server ([`docker/caddy-dimmelo.snippet`](docker/caddy-dimmelo.snippet)), con Postgres nel container `postgres` (rete Docker `postgres`).
+
+Sul server c'è una copia del repo (`git clone`), con il `.env.production` nella root. Sul server non c'è nessuna chiave per GitHub: ci si entra con l'inoltro dell'ssh-agent (`ssh -A`, o `ForwardAgent yes` solo per quell'host in `~/.ssh/config`), così `git pull` e `git push` usano la chiave locale finché la sessione è aperta. Il rilascio si lancia lì, a mano:
+
+```bash
+ssh -A <utente>@<server>
+cd ~/palio
+cp scripts/release.conf.example scripts/release.conf   # una volta: Postgres, immagini, health check
+scripts/release.sh --dry-run                           # mostra cosa farebbe
+scripts/release.sh                                     # rilascia
+```
+
+Lo script:
+
+1. aggiorna il codice (`git pull --rebase`); la copia sul server non deve avere modifiche locali.
+   Rilascia la versione di `package.json`, che deve avere il suo tag `vX.Y.Z`.
+   Dopo il tag non ci devono essere modifiche al codice né migrazioni nuove: sono ammessi solo
+   i commit di rilascio dello script. Poi controlla che su GHCR ci siano le immagini `:X.Y.Z`,
+   che ci sono solo se la CI è passata. Se qualcosa non torna si ferma prima di toccare il
+   database;
+2. esegue, in ordine di nome, le migrazioni di `db/migrations/` non ancora in `released/`, come
+   superuser ma con il ruolo applicativo (`PG_APP_ROLE`), così gli oggetti sono suoi; ognuna,
+   se va a buon fine, viene spostata in `released/`. Gli spostamenti finiscono in un commit che
+   lo script invia al repository (`git push`): in locale arrivano col prossimo `git pull`.
+   Al primo errore si ferma e non aggiorna i container;
+3. scarica le immagini della CI, riavvia i container (`docker compose up -d --wait`) e
+   controlla `HEALTH_URL`.
+
+Opzioni: `--dry-run`, `--yes` (senza conferma), `--skip-migrations`, `--skip-deploy`, `--build`.
+Con `--build`, o con `IMAGE_PREFIX` vuoto in `release.conf`, le immagini si costruiscono sul
+server. Serve, per esempio, se GHCR non risponde.
+
+**Accesso del server alle immagini** (una volta, se le immagini su GHCR sono private).
+1. Su GitHub crea un token *classic* con il solo permesso `read:packages`
+   (*Settings → Developer settings → Personal access tokens → Tokens (classic)*).
+2. Sul server lancia `docker login ghcr.io -u marco-meini` e incolla il token come password.
+   Docker lo salva in `~/.docker/config.json`.
+
+Il token permette solo di scaricare i pacchetti: non dà accesso al codice né al repo.
 
 ## Import da ilpalio.siena.it
 

@@ -18,9 +18,10 @@ Documentazione umana: `README.md`. Non duplicare runbook lunghi qui; punta ai pa
 | `client/` | Angular 21 (standalone) + Tailwind 4 — UI Dimmelo |
 | `server/` | API Express 5 + scraper + chat agent + MCP |
 | `db/bootstrap/` | Bootstrap istanza / pgvector |
-| `db/migrations/` | SQL pending (`prerelease.sql`, file isolati) e `released/` |
+| `db/migrations/` | Script di schema `NNNN_*.sql` in sospeso e `released/` (spostati da `scripts/release.sh`) |
 | `db/dumps/` | Schema/dump iniziali |
-| `docker/`, `deploy.sh` | Deploy VPS (Caddy, container FE/BE) |
+| `docker/`, `scripts/release.sh` | Rilascio sul VPS (migrazioni + container FE/BE da GHCR), Caddy |
+| `.github/workflows/ci.yml` | CI al push di un tag `vX.Y.Z` (`npm version`): typecheck, test e build, poi immagini `:X.Y.Z` su GHCR |
 | `.claude/skills/` | Skill operative (es. scrape) |
 | `.env` | Segreti locali (mai commitare); template: `.env.example` |
 
@@ -34,9 +35,8 @@ npm install && cd server && npm install && cd ../client && npm install
 cp .env.example .env   # poi DATABASE_URL, ANTHROPIC_API_KEY, …
 npm run dev            # API :3001 + Angular :4200
 
-# Test / build
-cd server && npm test
-cd client && npm run build
+# Typecheck / test / build (root; stessi controlli della CI: .github/workflows/ci.yml)
+npm run typecheck && npm test && npm run build
 
 # Scrape (skill dedicata)
 # .claude/skills/scrape-ilpalio/SKILL.md
@@ -111,8 +111,11 @@ UI esistente: palette ambrata/stone. Nuove schermate: allinearsi al look Dimmelo
 
 ## Database e migration
 
-- Pending: `db/migrations/prerelease.sql` o file dedicati; changelog in `db/migrations/CHANGELOG.md`
-- Released: `db/migrations/released/`
+- **Gli script SQL li esegue sempre e solo l'utente, a mano.** L'agent non esegue mai script di `db/` né `psql`/client SQL che modificano dati o schema, **a meno che l'utente non lo chieda esplicitamente**. Scrive lo script e indica il comando da lanciare.
+- **Nessun automatismo che esegua SQL sul database**: niente runner di migrazioni, tabelle di versionamento, script npm, entrypoint Docker, hook di avvio dell'app o step di CI che applichino script. Unica eccezione: `scripts/release.sh`, che l'utente lancia a mano sul server per il rilascio in produzione ed esegue le migrazioni non ancora in `db/migrations/released/`. L'agent non lo lancia mai e non sposta file in `released/`: lo fa lo script, con un commit.
+- Ogni modifica di schema è un **nuovo** file `db/migrations/NNNN_descrizione.sql` (numero successivo, nome in snake_case minuscolo), che l'utente esegue a mano; nota descrittiva in `db/migrations/CHANGELOG.md`.
+- Non modificare uno script già consegnato/eseguito (in particolare quelli in `db/migrations/released/`): per correggere se ne scrive uno nuovo.
+- Le migrazioni in produzione girano come superuser con il ruolo applicativo (`PG_APP_ROLE`, di norma `app_palio`): gli oggetti creati sono suoi.
 - Bootstrap: `db/bootstrap/` (istanza, DB, pgvector)
 - Config skill Postgres (non versionata): `.skills/postgres/config.toml`, profile tipico `local`
 - Email in `dimmelo_users`: **minuscolo** (CHECK)
@@ -125,13 +128,13 @@ Prima di alterare schema: leggere CHANGELOG e colonne domain-specific sopra; non
 ## Env e deploy
 
 - Dev: `.env` root (da `.env.example`)
-- Prod: `.env.production` (da `.env.production.example`); deploy con `./deploy.sh`
+- Prod: `.env.production` (da `.env.production.example`); rilascio con `scripts/release.sh` (versione = tag `vX.Y.Z` via `npm version`, immagini dalla CI su GHCR) — vedi README «CI e rilascio in produzione»
 - Non commitare `.env`, `google-oauth.json`, dump con dati sensibili
 - `AUTH_ENABLED=true` in produzione; health pubblico, chat protetta
 
 ### VPS — divieto assoluto senza richiesta esplicita
 
-**NON eseguire MAI azioni sul VPS** (SSH, `scp`, `rsync`, `git pull`/`reset` remoto, `docker compose`, `deploy.sh`, modifica `.env.production`, restart container, ecc.) **a meno che l’utente non lo chieda esplicitamente in quel messaggio**.
+**NON eseguire MAI azioni sul VPS** (SSH, `scp`, `rsync`, `git pull`/`reset` remoto, `docker compose`, `scripts/release.sh`, modifica `.env.production`, restart container, ecc.) **a meno che l’utente non lo chieda esplicitamente in quel messaggio**.
 
 - Un log di errore da un terminale SSH, un paste di `git pull` fallito, o “guarda questo errore” **non** sono un’autorizzazione a intervenire sul server.
 - In quei casi: spiegare la causa e proporre i comandi da far girare **all’utente**; non lanciarli tu sul VPS.
@@ -166,6 +169,6 @@ Per scrape: seguire la skill (non reinventare CLI o URL).
 - Scraping senza delay / senza usare `tasks/scrape-ilpalio.ts`
 - Import ESM senza estensione `.js`
 - Nuovi componenti Angular non-standalone o NgModule legacy
-- Migration applicate “a mano” senza aggiornare CHANGELOG / released quando si rilascia
+- Spostare a mano file in `db/migrations/released/` o modificare script già rilasciati
 - Hardcoded URL produzione nel client al posto di env/proxy
 - SSH / deploy / git / docker sul VPS “per aiutare” senza che l’utente l’abbia chiesto nero su bianco

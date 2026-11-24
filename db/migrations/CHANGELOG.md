@@ -1,6 +1,6 @@
 ## WIP
 
-### palii_pittore_drappellone.sql
+### 0002_palii_pittore_drappellone.sql
 - `palii.pittore_drappellone` — nome del pittore del drappellone (testo; NULL se assente sul sito)
 - Scraper: dal sommario `#spAutoreDrappellone` (nessuna fetch extra); UPSERT su `palii`
 
@@ -32,7 +32,7 @@
 - Popolamento: `cd server && npm run index-regolamento`
 - Grant `SELECT` a `palio_chat_ro` (e DML a `app_palio`) se i ruoli esistono
 
-### dimmelo_users.sql
+### 0001_dimmelo_users.sql
 - `dimmelo_users` — email (unique, lowercase), `display_name`, `created_at`; seed Marco
 
 ### palio_chat_ro.sql
