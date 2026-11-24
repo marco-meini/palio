@@ -6,6 +6,10 @@
 
 BEGIN;
 
+-- Da Postgres 15 lo schema public non concede più CREATE a tutti: le migrazioni come app_palio
+-- devono poter creare tabelle (anche CREATE TABLE IF NOT EXISTS controlla prima il permesso).
+GRANT USAGE, CREATE ON SCHEMA public TO app_palio;
+
 DO $$
 DECLARE
   obj record;
