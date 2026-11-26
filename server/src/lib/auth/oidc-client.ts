@@ -40,8 +40,16 @@ export class OidcClient {
     return `${this.config.appUrl}/uscito`;
   }
 
-  /** URL della pagina di login di ZITADEL per questo tentativo. */
-  async authorizationUrl(params: { state: string; nonce: string; codeVerifier: string }): Promise<string> {
+  /**
+   * URL della pagina di login di ZITADEL per questo tentativo. Con `selectAccount` ZITADEL mostra
+   * l'elenco degli account invece di riusare la sessione già aperta nel browser.
+   */
+  async authorizationUrl(params: {
+    state: string;
+    nonce: string;
+    codeVerifier: string;
+    selectAccount?: boolean;
+  }): Promise<string> {
     const configuration = await this.discover();
     return oidc
       .buildAuthorizationUrl(configuration, {
@@ -58,6 +66,7 @@ export class OidcClient {
         code_challenge_method: 'S256',
         state: params.state,
         nonce: params.nonce,
+        ...(params.selectAccount ? { prompt: 'select_account' } : {}),
       })
       .toString();
   }

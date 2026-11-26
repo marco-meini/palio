@@ -7,6 +7,8 @@ export interface AppConfig {
   anthropic: {
     apiKey: string;
     model: string;
+    /** Modello per il titolo delle chat (default: lo stesso della chat). */
+    titleModel: string;
     maxOutputTokens: number;
     maxToolSteps: number;
     maxRegolamentoCalls: number;
@@ -54,6 +56,10 @@ function buildConfigFromEnv(): AppConfig {
     anthropic: {
       apiKey: envString(process.env.ANTHROPIC_API_KEY),
       model: envString(process.env.ANTHROPIC_MODEL, 'claude-sonnet-4-6'),
+      titleModel: envString(
+        process.env.ANTHROPIC_TITLE_MODEL,
+        envString(process.env.ANTHROPIC_MODEL, 'claude-sonnet-4-6'),
+      ),
       maxOutputTokens: envInt(process.env.ANTHROPIC_MAX_OUTPUT_TOKENS, 4096),
       maxToolSteps: envInt(process.env.ANTHROPIC_MAX_TOOL_STEPS, 12),
       maxRegolamentoCalls: envInt(process.env.ANTHROPIC_MAX_REGOLAMENTO_CALLS, 2),

@@ -3,11 +3,17 @@ import {
   ElementRef,
   OnDestroy,
   computed,
+  effect,
   inject,
+  input,
   signal,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router, RouterLink } from '@angular/router';
+import { ChatsApi } from '../../core/api/chats-api';
+import { toApiError } from '../../core/api/users-api';
 import { AuthService } from '../../core/auth/auth.service';
 import {
   ChatApiService,
@@ -32,9 +38,21 @@ Scrivi pure la tua domanda qui sotto.`,
 @Component({
   selector: 'app-chat',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RouterLink],
   template: `
     <div class="flex h-full flex-col">
+      <header
+        class="flex items-center gap-3 border-b border-stone-200/80 bg-white/70 px-4 py-3 backdrop-blur sm:px-6"
+      >
+        <a
+          routerLink="/chat"
+          class="shrink-0 rounded-md px-2 py-1 text-sm text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+          >← Chat</a
+        >
+        <h1 class="min-w-0 truncate text-base font-semibold text-stone-900">
+          {{ title() ?? 'Nuova chat' }}
+        </h1>
+      </header>
 
       <div
         #scrollContainer
@@ -138,8 +156,16 @@ Scrivi pure la tua domanda qui sotto.`,
   `,
 })
 export class ChatComponent implements OnDestroy {
+  /** Path param `:id`: id della chat salvata, o `nuova`. */
+  readonly id = input<string>();
+
   private readonly auth = inject(AuthService);
+  private readonly router = inject(Router);
+  private readonly chats = inject(ChatsApi);
   private readonly chatApi = new ChatApiService();
+  /** Chat mostrata (`null` = nuova, non ancora salvata). */
+  private readonly conversationId = signal<number | null>(null);
+  protected readonly title = signal<string | null>(null);
 
   private abortController: AbortController | null = null;
 
@@ -154,8 +180,45 @@ export class ChatComponent implements OnDestroy {
     () => !this.loading() && this.draft.trim().length > 0,
   );
 
+  constructor() {
+    effect(() => {
+      const raw = this.id();
+      untracked(() => {
+        const id = raw && raw !== 'nuova' ? Number(raw) : null;
+        // la chat appena creata da questa pagina è già mostrata: niente da ricaricare
+        if (id !== null && id === this.conversationId()) return;
+        void this.open(id);
+      });
+    });
+  }
+
   ngOnDestroy(): void {
     this.abortController?.abort();
+  }
+
+  /** Mostra una chat salvata, o una nuova vuota. */
+  private async open(id: number | null): Promise<void> {
+    this.abortController?.abort();
+    this.conversationId.set(id);
+    this.title.set(null);
+    this.error.set(null);
+    this.loading.set(false);
+    this.messages.set(id === null ? [WELCOME] : []);
+    if (id === null || Number.isNaN(id)) {
+      if (Number.isNaN(id)) this.error.set('Chat non trovata');
+      return;
+    }
+    try {
+      const chat = await this.chats.get(id);
+      if (this.conversationId() !== id) return;
+      this.title.set(chat.title);
+      this.messages.set(
+        chat.messages.map((m) => ({ id: String(m.id), role: m.role, content: m.content })),
+      );
+      this.scrollToBottom();
+    } catch (error) {
+      if (this.conversationId() === id) this.error.set(toApiError(error).message);
+    }
   }
 
   protected render(content: string): string {
@@ -189,15 +252,18 @@ export class ChatComponent implements OnDestroy {
     this.abortController?.abort();
     this.abortController = new AbortController();
 
-    const history = this.messages()
-      .filter((m) => m.id !== 'welcome')
-      .map((m) => ({ role: m.role, content: m.content }));
-
     let assistantId: string | null = null;
 
     try {
-      await this.chatApi.sendMessage(history, {
+      await this.chatApi.sendMessage(this.conversationId(), text, {
         signal: this.abortController.signal,
+        onConversation: (id) => {
+          if (this.conversationId() === id) return;
+          // chat appena creata: l'indirizzo diventa quello della chat salvata
+          this.conversationId.set(id);
+          void this.router.navigate(['/chat', id], { replaceUrl: true });
+        },
+        onTitle: (title) => this.title.set(title),
         onTextDelta: (delta) => {
           if (!assistantId) {
             assistantId = crypto.randomUUID();

@@ -90,10 +90,12 @@ quella di ZITADEL.
 - `chat.use` — usare la chat Dimmelo;
 - `users.view` — vedere gli utenti; `users.manage` — gestirli (comprende vedere).
 
-Il progetto ha *Only authorized users can authenticate*: entra solo chi ha almeno un ruolo. I
-ruoli arrivano nell'ID token; ogni 5 minuti il backend li rilegge con il refresh token, così un
-ruolo tolto o un accesso disattivato valgono anche per le sessioni già aperte (se ZITADEL rifiuta
-il refresh, la sessione si chiude). Ogni endpoint dichiara cosa serve (`guard.public()`,
+Entra solo chi ha almeno un ruolo: lo controlla Dimmelo (non ZITADEL), così chi entra con un
+account senza accesso torna alla pagina di accesso con «Accedi con un altro account», che fa
+scegliere l'account su ZITADEL (`prompt=select_account`; «Usa un altro account» è sempre
+disponibile). I ruoli arrivano nell'ID token; ogni 5 minuti il backend li rilegge con il refresh
+token, così un ruolo tolto o un accesso disattivato valgono anche per le sessioni già aperte (se
+non resta nessun ruolo o ZITADEL rifiuta il refresh, la sessione si chiude). Ogni endpoint dichiara cosa serve (`guard.public()`,
 `guard.anyUser()`, `guard.require(...)`); le richieste non-GET devono avere `Origin` uguale ad
 `APP_URL` (protezione CSRF).
 
@@ -125,9 +127,10 @@ cd server && npm run import:dimmelo-users                # lo fa (scrive su ZITA
 
 #### Configurazione su ZITADEL (una volta)
 
-1. **Progetto `Dimmelo`** con i ruoli `chat.use`, `users.view`, `users.manage` e le opzioni
-   *Return user roles during authentication* e *Only authorized users can authenticate*. Il suo
-   id va in `ZITADEL_PROJECT_ID`.
+1. **Progetto `Dimmelo`** con i ruoli `chat.use`, `users.view`, `users.manage` e l'opzione
+   *Return user roles during authentication* (non *Only authorized users can authenticate*: il
+   controllo lo fa Dimmelo, per poter proporre un altro account). Il suo id va in
+   `ZITADEL_PROJECT_ID`.
 2. **Applicazione `dimmelo-web`** nel progetto: tipo *Web*, autenticazione *Basic*, grant
    *Authorization Code* e *Refresh Token*; redirect `https://dimmelo.marcomeini.it/api/auth/callback`
    e `http://localhost:4200/api/auth/callback` (con *Development Mode* per `http`), post logout
@@ -187,7 +190,8 @@ Route di autenticazione e utenti:
 | GET | `/api/auth/me` | utente | Utente corrente e permessi effettivi |
 | GET | `/api/users`, `/api/users/:id`, `/api/permissions` | `users.view` | Elenco, scheda, catalogo permessi |
 | POST/PUT/DELETE | `/api/users[/:id[/invite\|disable\|enable]]` | `users.manage` | Gestione utenti |
-| POST | `/api/chat` | `chat.use` | Chat |
+| GET/DELETE | `/api/chats[/:id]` | `chat.use` | Chat salvate dell'utente: elenco, conversazione, eliminazione |
+| POST | `/api/chat` | `chat.use` | Domanda `{ conversationId?, message }`, risposta in streaming (SSE); senza `conversationId` crea la chat e ne genera il titolo con l'AI (`ANTHROPIC_TITLE_MODEL`, default `ANTHROPIC_MODEL`) |
 
 `GET /api/health` resta pubblico (monitoring).
 

@@ -37,7 +37,24 @@ describe('Login', () => {
   });
 
   it('mostra il motivo se l’accesso non è riuscito', () => {
-    expect(render({ errore: 'negato' }).textContent).toContain('non ha accesso a Dimmelo');
+    expect(render({ errore: 'servizio' }).textContent).toContain('non risponde');
     expect(render().querySelector('[role=alert]')).toBeNull();
+  });
+
+  it('account senza accesso: propone di accedere con un altro account', () => {
+    const root = render({ errore: 'negato' });
+    expect(root.textContent).toContain('non ha accesso a Dimmelo');
+    const button = root.querySelector('button')!;
+    expect(button.textContent).toContain('Accedi con un altro account');
+    button.click();
+    expect(assign).toHaveBeenCalledWith('/api/auth/login?returnTo=%2F&account=altro');
+  });
+
+  it('«Usa un altro account» sempre disponibile', () => {
+    const other = [...render().querySelectorAll('button')].find((b) =>
+      b.textContent!.includes('Usa un altro account'),
+    )!;
+    other.click();
+    expect(assign).toHaveBeenCalledWith('/api/auth/login?returnTo=%2F&account=altro');
   });
 });

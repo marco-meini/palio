@@ -1,5 +1,9 @@
 ## WIP
 
+### 0004_chat_history.sql
+- `chat_conversation` (utente, titolo generato dall'AI, ultima attività) e `chat_message` (ruolo `user`/`assistant`, testo): chat salvate per utente
+- `REVOKE` su `palio_chat_ro`: le conversazioni sono private
+
 ### 0003_auth.sql
 - Login OIDC con ZITADEL: chi entra e con quali permessi lo decidono i ruoli del progetto Dimmelo (`chat.use`, `users.view`, `users.manage`)
 - `app_user`: profilo di chi è entrato almeno una volta (`idp_user_id` ZITADEL, nome, email, ultimo accesso)

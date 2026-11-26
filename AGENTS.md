@@ -108,6 +108,7 @@ Nota: il README può citare Fastify storicamente — il server è **Express**.
 
 - Standalone components, **signals** (`signal`, `computed`), `inject()`
 - Feature folders: `app/features/<feature>/`, shared in `app/core/` (services, guards, utils)
+- Area riservata nella cornice `core/layout/app-shell.ts` (sidebar come dimora): una pagina nuova è una rotta figlia in `app.routes.ts` (con `permissionGuard`) più una voce in `core/layout/nav.ts`; icone in `core/layout/icon.ts`
 - Template inline o file collocati al componente; stili Tailwind utility-first
 - Markdown assistente: `core/utils/markdown.ts` (sanitizzato) — non renderizzare HTML grezzo dalla API
 - Proxy `/api` → backend in dev; non hardcodare host di produzione nell’UI

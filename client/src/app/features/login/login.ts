@@ -6,7 +6,8 @@ import { AuthShell } from '../../core/layout/auth-shell';
 const ERRORS: Record<string, string> = {
   scaduto: 'L’accesso è scaduto o è stato aperto in un’altra scheda. Riprova.',
   annullato: 'Accesso annullato.',
-  negato: 'Il tuo account non ha accesso a Dimmelo. Chiedi a chi gestisce gli utenti di invitarti.',
+  negato:
+    'L’account con cui sei entrato non ha accesso a Dimmelo. Accedi con un altro account, oppure chiedi a chi gestisce gli utenti di invitarti.',
   servizio: 'Il servizio di accesso non risponde. Riprova tra poco.',
 };
 
@@ -31,10 +32,19 @@ const ERRORS: Record<string, string> = {
       <button
         type="button"
         class="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-amber-700 px-4 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-amber-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700"
-        (click)="signIn()"
+        (click)="signIn(denied())"
       >
-        Accedi
+        {{ denied() ? 'Accedi con un altro account' : 'Accedi' }}
       </button>
+      @if (!denied()) {
+        <button
+          type="button"
+          class="mt-3 text-sm font-medium text-amber-700 hover:text-amber-900"
+          (click)="signIn(true)"
+        >
+          Usa un altro account
+        </button>
+      }
 
       <p class="mt-6 text-xs leading-relaxed text-stone-500">
         Entri con una passkey (Face ID, Touch ID, Windows Hello) o con il tuo account Google.
@@ -49,13 +59,15 @@ export class Login {
   readonly errore = input<string>();
 
   private readonly auth = inject(AuthService);
+  /** L'account usato non ha accesso: si propone di sceglierne un altro. */
+  protected readonly denied = computed(() => this.errore() === 'negato');
   protected readonly message = computed(() => {
     const code = this.errore();
     return code ? (ERRORS[code] ?? 'Accesso non riuscito. Riprova.') : '';
   });
 
-  protected signIn(): void {
-    this.auth.login(this.destination());
+  protected signIn(otherAccount = false): void {
+    this.auth.login(this.destination(), otherAccount);
   }
 
   /** Solo path interni (anti open-redirect; il backend lo ricontrolla). */

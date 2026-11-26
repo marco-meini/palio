@@ -34,9 +34,13 @@ export class AuthService {
     }
   }
 
-  /** Va alla pagina di accesso di ZITADEL; dopo l'accesso il backend riporta a `returnTo`. */
-  login(returnTo = '/'): void {
-    browserLocation.assign(`/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
+  /**
+   * Va alla pagina di accesso di ZITADEL; dopo l'accesso il backend riporta a `returnTo`.
+   * Con `otherAccount` ZITADEL fa scegliere l'account invece di riusare quello già aperto.
+   */
+  login(returnTo = '/', otherAccount = false): void {
+    const account = otherAccount ? '&account=altro' : '';
+    browserLocation.assign(`/api/auth/login?returnTo=${encodeURIComponent(returnTo)}${account}`);
   }
 
   /** Utente corrente impostato a mano (es. nei test). */

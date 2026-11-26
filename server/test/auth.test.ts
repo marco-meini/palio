@@ -194,7 +194,16 @@ describe('SessionService', () => {
     assert.equal(calls.filter((c) => c.startsWith('oidc:')).length, 1);
   });
 
-  it('refresh rifiutato (ruoli tolti, utente disattivato): sessione chiusa', async () => {
+  it('refresh senza più ruoli sul progetto: sessione chiusa', async () => {
+    const { service, calls } = setup(
+      { session_refreshed_at: new Date(now - 10 * 60_000) },
+      async () => identity([]),
+    );
+    assert.equal(await service.validate('t', now), null);
+    assert.ok(calls.includes('delete'));
+  });
+
+  it('refresh rifiutato (utente disattivato, token revocato): sessione chiusa', async () => {
     const { service, calls } = setup({ session_refreshed_at: new Date(now - 10 * 60_000) }, async () => {
       throw new RefreshRejectedError('invalid_grant');
     });

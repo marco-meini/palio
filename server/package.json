@@ -6,7 +6,7 @@
     "build": "tsc",
     "build:watch": "tsc -w",
     "start": "node --enable-source-maps ./dist/main.js",
-    "dev:api": "tsx ./src/main.ts",
+    "dev:api": "tsx watch ./src/main.ts",
     "mcp:palio-db": "tsx ./src/mcp/palio-db-server.ts",
     "test": "node --import tsx --test test/*.test.ts",
     "index-regolamento": "tsx ./src/tasks/index-regolamento.ts",

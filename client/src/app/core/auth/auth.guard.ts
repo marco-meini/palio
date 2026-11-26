@@ -27,11 +27,3 @@ export function permissionGuard(permission: Permission): CanActivateFn {
     return auth.can(permission) || inject(Router).parseUrl('/accesso-negato');
   };
 }
-
-/** Pagina iniziale (la chat): chi non può usarla ma vede gli utenti va su «Utenti». */
-export const homeGuard: CanActivateFn = (route, state) => {
-  const auth = inject(AuthService);
-  if (!auth.isAuthenticated()) return authGuard(route, state);
-  if (auth.can('chat.use')) return true;
-  return inject(Router).parseUrl(auth.can('users.view') ? '/utenti' : '/accesso-negato');
-};

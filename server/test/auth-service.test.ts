@@ -19,9 +19,9 @@ const identity = (permissions: OidcIdentity['permissions']): OidcIdentity => ({
 function setup(permissions: OidcIdentity['permissions'] = ['chat.use']) {
   const calls: unknown[][] = [];
   const oidc = {
-    authorizationUrl: async (p: { state: string; nonce: string; codeVerifier: string }) => {
+    authorizationUrl: async (p: { state: string; nonce: string; codeVerifier: string; selectAccount?: boolean }) => {
       calls.push(['authorize', p]);
-      return `https://id.example.com/oauth/v2/authorize?state=${p.state}`;
+      return `https://id.example.com/oauth/v2/authorize?state=${p.state}${p.selectAccount ? '&prompt=select_account' : ''}`;
     },
     exchange: async (query: string, expected: LoginState) => {
       calls.push(['exchange', query, expected.state]);
@@ -67,6 +67,8 @@ describe('AuthService', () => {
     assert.notEqual(a.state.nonce, b.state.nonce);
     assert.ok(a.state.codeVerifier.length >= 43);
     assert.ok(a.url.includes(`state=${a.state.state}`));
+    assert.ok(!a.url.includes('prompt='));
+    assert.ok((await service.startLogin('/', true)).url.includes('prompt=select_account'));
   });
 
   it('finishLogin: profilo aggiornato e sessione con i permessi del token', async () => {

@@ -1,5 +1,7 @@
+import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
-import { anonymousGuard, authGuard, homeGuard, permissionGuard } from './core/auth/auth.guard';
+import { anonymousGuard, authGuard, permissionGuard } from './core/auth/auth.guard';
+import { AuthService } from './core/auth/auth.service';
 import { AppShell } from './core/layout/app-shell';
 
 export const routes: Routes = [
@@ -23,11 +25,31 @@ export const routes: Routes = [
     canActivateChild: [authGuard],
     children: [
       {
+        // home: la chat, o «Utenti» per chi non può usarla (senza sessione: la chat, che porta
+        // all'accesso)
         path: '',
         pathMatch: 'full',
-        canActivate: [homeGuard],
-        loadComponent: () =>
-          import('./features/chat/chat.component').then((m) => m.ChatComponent),
+        redirectTo: () => {
+          const auth = inject(AuthService);
+          if (!auth.isAuthenticated() || auth.can('chat.use')) return '/chat';
+          return auth.can('users.view') ? '/utenti' : '/accesso-negato';
+        },
+      },
+      {
+        path: 'chat',
+        canActivate: [permissionGuard('chat.use')],
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./features/chat/chat-list').then((m) => m.ChatList),
+          },
+          {
+            // `nuova` o l'id di una chat salvata
+            path: ':id',
+            loadComponent: () =>
+              import('./features/chat/chat.component').then((m) => m.ChatComponent),
+          },
+        ],
       },
       {
         path: 'utenti',

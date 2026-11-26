@@ -125,6 +125,10 @@ export class SessionService {
     }
     try {
       const identity = await this.oidc.refresh(refreshToken, user.idp_user_id);
+      if (identity.permissions.length === 0) {
+        // nessun ruolo rimasto sul progetto: niente più accesso a Dimmelo
+        throw new RefreshRejectedError('nessun ruolo');
+      }
       await this.model.refreshSession(idHash, {
         permissions: identity.permissions,
         refresh_token_enc: identity.refreshToken ? this.crypto.encrypt(identity.refreshToken) : null,

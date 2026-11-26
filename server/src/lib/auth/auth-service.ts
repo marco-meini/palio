@@ -26,8 +26,15 @@ export class AuthService {
     private readonly model: ModelAuth,
   ) {}
 
-  /** Nuovo tentativo di login: URL di ZITADEL e stato da tenere nel cookie firmato. */
-  async startLogin(returnTo: unknown, now = Date.now()): Promise<{ url: string; state: LoginState }> {
+  /**
+   * Nuovo tentativo di login: URL di ZITADEL e stato da tenere nel cookie firmato. Con
+   * `selectAccount` si sceglie l'account (es. quello usato non ha accesso a Dimmelo).
+   */
+  async startLogin(
+    returnTo: unknown,
+    selectAccount = false,
+    now = Date.now(),
+  ): Promise<{ url: string; state: LoginState }> {
     const state: LoginState = {
       state: oidc.randomState(),
       nonce: oidc.randomNonce(),
@@ -35,10 +42,14 @@ export class AuthService {
       returnTo: safeReturnTo(returnTo),
       expiresAt: now + LOGIN_STATE_TTL_MS,
     };
-    return { url: await this.oidc.authorizationUrl(state), state };
+    return { url: await this.oidc.authorizationUrl({ ...state, selectAccount }), state };
   }
 
-  /** Ritorno da ZITADEL: verifica i token, aggiorna il profilo e apre la sessione. */
+  /**
+   * Ritorno da ZITADEL: verifica i token, aggiorna il profilo e apre la sessione. Chi non ha
+   * ruoli sul progetto Dimmelo non entra: lo decide palio (non ZITADEL), così torna alla pagina
+   * di accesso e può scegliere un altro account.
+   */
   async finishLogin(query: string, state: LoginState, userAgent: string | null): Promise<SignedIn> {
     const identity = await this.oidc.exchange(query, state);
     if (identity.permissions.length === 0) throw forbidden(NO_ACCESS);

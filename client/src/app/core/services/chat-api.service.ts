@@ -8,6 +8,10 @@ export interface ChatMessage {
 }
 
 export interface ChatStreamCallbacks {
+  /** Conversazione in cui è salvata la domanda (nuova o esistente), appena il server la conosce. */
+  onConversation?: (id: number) => void;
+  /** Titolo generato dall'AI (solo per una conversazione nuova). */
+  onTitle?: (title: string) => void;
   onTextDelta?: (delta: string) => void;
   onToolStart?: (name: string) => void;
   onToolEnd?: (name: string) => void;
@@ -38,14 +42,19 @@ function parseSseBlock(block: string): { event: string; data: string } | null {
 }
 
 export class ChatApiService {
+  /**
+   * Manda una domanda: la storia della conversazione la tiene il server. Senza
+   * `conversationId` il server crea una conversazione nuova (vedi `onConversation`).
+   */
   async sendMessage(
-    messages: Pick<ChatMessage, 'role' | 'content'>[],
+    conversationId: number | null,
+    message: string,
     options: SendChatOptions = {},
   ): Promise<void> {
     const response = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ conversationId, message }),
       signal: options.signal,
       credentials: 'include',
     });
@@ -102,6 +111,12 @@ export class ChatApiService {
         }
 
         switch (parsed.event) {
+          case 'conversation':
+            if (typeof payload['id'] === 'number') options.onConversation?.(payload['id']);
+            break;
+          case 'title':
+            if (typeof payload['title'] === 'string') options.onTitle?.(payload['title']);
+            break;
           case 'text': {
             const delta = typeof payload['delta'] === 'string' ? payload['delta'] : '';
             if (delta) options.onTextDelta?.(delta);

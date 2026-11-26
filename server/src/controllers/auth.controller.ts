@@ -26,12 +26,15 @@ export class AuthController extends Abstract_Controller {
     this.router.get('/me', guard.anyUser(), this.me.bind(this));
   }
 
-  /** Va alla pagina di login di ZITADEL; lo stato del tentativo resta in un cookie firmato. */
+  /**
+   * Va alla pagina di login di ZITADEL (`?account=altro`: scelta dell'account); lo stato del
+   * tentativo resta in un cookie firmato.
+   */
   private async login(req: Request, res: Response): Promise<void> {
     const { auth, config } = this.env.auth;
     let target: { url: string; state: Parameters<typeof encodeLoginState>[0] };
     try {
-      target = await auth.startLogin(req.query['returnTo']);
+      target = await auth.startLogin(req.query['returnTo'], req.query['account'] === 'altro');
     } catch {
       return this.loginError(res, 'servizio');
     }
