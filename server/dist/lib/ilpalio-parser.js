@@ -17,8 +17,124 @@ export function assegnazioneCavalliUrl(sourceCode) {
 export function ordineArrivoUrl(sourceCode) {
     return `${BASE}/5/Palio/${sourceCode}/ordine-arrivo`;
 }
+export function caduteUrl(sourceCode) {
+    return `${BASE}/5/Palio/${sourceCode}/cadute`;
+}
+export function proveUrl(sourceCode) {
+    return `${BASE}/5/Palio/${sourceCode}/prove`;
+}
 export function dirigenzeUrl(sourceCode) {
     return `${BASE}/5/Palio/${sourceCode}/dirigenze`;
+}
+/** Pagina alleanze/rivalità di una contrada (code AQ… o nome Aquila). */
+export function rivalitaUrl(codeOrName) {
+    const slug = String(codeOrName || '').trim();
+    if (!slug)
+        throw new Error('rivalitaUrl: missing contrada code or name');
+    return `${BASE}/5/Contrade/${encodeURIComponent(slug)}?rivalita&lang=it`;
+}
+/**
+ * Precisione annuale dal sito → date ISO.
+ * @returns {{ dataInizio: string|null, dataFine: string|null }[]}
+ */
+export function parseRivalitaYearText(text) {
+    const raw = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!raw)
+        return [];
+    const periods = [];
+    const chunks = raw.split(/\bpoi\b/i);
+    for (const chunk of chunks) {
+        const dalAl = chunk.match(/dal\s+(\d{4})\s+al\s+(\d{4})/i);
+        if (dalAl) {
+            periods.push({
+                dataInizio: `${dalAl[1]}-01-01`,
+                dataFine: `${dalAl[2]}-12-31`,
+            });
+            continue;
+        }
+        const fino = chunk.match(/fino\s+al\s+(\d{4})/i);
+        if (fino) {
+            periods.push({
+                dataInizio: null,
+                dataFine: `${fino[1]}-12-31`,
+            });
+            continue;
+        }
+        const dal = chunk.match(/dal\s+(\d{4})/i);
+        if (dal) {
+            periods.push({
+                dataInizio: `${dal[1]}-01-01`,
+                dataFine: null,
+            });
+        }
+    }
+    return periods;
+}
+/**
+ * Solo blocco InfoBox «Rivalità» (ignora Alleanze e narrazione).
+ * @returns {{ rivaleCode: string, dataInizio: string|null, dataFine: string|null }[]}
+ */
+export function parseRivalita(html) {
+    const $ = cheerio.load(html);
+    const box = $('.Corniciato.InfoBox')
+        .filter((_, el) => {
+        const title = $(el).find('.Grande').first().text().replace(/\s+/g, '');
+        return /Rivalit/i.test(title);
+    })
+        .first();
+    if (!box.length)
+        return [];
+    const results = [];
+    const $p = box.find('p').first();
+    const nodes = $p.contents().toArray();
+    let i = 0;
+    while (i < nodes.length) {
+        const node = nodes[i];
+        if (node.type === 'tag' && node.name === 'a') {
+            const href = $(node).attr('href') || '';
+            const m = href.match(/\/Contrade\/([A-Za-z]+)/i);
+            if (m) {
+                const rivaleCode = normalizeContradaCode(m[1]);
+                let periodText = '';
+                let j = i + 1;
+                while (j < nodes.length) {
+                    const n = nodes[j];
+                    if (n.type === 'tag' && n.name === 'br')
+                        break;
+                    if (n.type === 'tag' && n.name === 'a') {
+                        const h = $(n).attr('href') || '';
+                        if (/\/Contrade\//i.test(h))
+                            break;
+                        periodText += $(n).text();
+                    }
+                    else if (n.type === 'text') {
+                        periodText += n.data || '';
+                    }
+                    else if (n.type === 'tag') {
+                        periodText += $(n).text();
+                    }
+                    j += 1;
+                }
+                const periods = parseRivalitaYearText(periodText);
+                if (periods.length === 0) {
+                    results.push({ rivaleCode, dataInizio: null, dataFine: null });
+                }
+                else {
+                    for (const p of periods) {
+                        results.push({
+                            rivaleCode,
+                            dataInizio: p.dataInizio,
+                            dataFine: p.dataFine,
+                        });
+                    }
+                }
+                i = j;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    return results;
 }
 export function isEstrattaDaSindaco(label) {
     return /^sindaco$/i.test(String(label || '').trim());
@@ -86,6 +202,7 @@ export function parsePalioPage(html, pageUrl) {
         sourceCode,
         dataPalio,
         straordinario,
+        pittoreDrappellone: parsePittoreDrappellone($),
         vincitrice,
     };
 }
@@ -164,10 +281,17 @@ export function parseAssegnazioneCavalli(html) {
         if (!rawCode)
             return;
         const contradaCode = normalizeContradaCode(rawCode);
-        const proprietarioCavallo = row.find('[name="Proprietario"]').first().text().trim();
+        let proprietarioCavallo = row.find('[name="Proprietario"]').first().text().trim();
+        if (!proprietarioCavallo) {
+            const mobileOwner = row.find('[name="Cavallo"] .Mobile').first().text().trim();
+            const m = /^di\s+(.+)$/i.exec(mobileOwner);
+            if (m)
+                proprietarioCavallo = m[1].trim();
+        }
         const presoDaEl = row.find('[name="PresoDa"]').first();
-        const cavalloPresoDa = (presoDaEl.find('a').first().text() || presoDaEl.text()).trim();
-        if (!proprietarioCavallo || !cavalloPresoDa)
+        const cavalloPresoDaRaw = (presoDaEl.find('a').first().text() || presoDaEl.text()).trim();
+        const cavalloPresoDa = cavalloPresoDaRaw || null;
+        if (!proprietarioCavallo)
             return;
         out.set(contradaCode, {
             ordineAssegnazione,
@@ -202,6 +326,164 @@ export function parseOrdineArrivo(html) {
     if (!out.size) {
         throw new Error('No ContradaBox rows on ordine-arrivo page');
     }
+    return out;
+}
+/** `Primo giro` → 1, `Secondo giro` → 2, `Terzo giro` → 3. */
+function parseGiroCadutaLabel(text) {
+    const t = String(text || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .toLowerCase();
+    if (/primo\s+giro/.test(t))
+        return 1;
+    if (/secondo\s+giro/.test(t))
+        return 2;
+    if (/terzo\s+giro/.test(t))
+        return 3;
+    return null;
+}
+/**
+ * Cadute per giro: sezioni `.Corniciato` con h4 Primo/Secondo/Terzo giro
+ * e box `.ContradaCaduta .ContradaBox` (onclick DC).
+ * Mappa code → giro (1–3); se duplicato, tiene il giro minore.
+ */
+export function parseCadute(html) {
+    const $ = cheerio.load(html);
+    const root = $('#sezPrincipale').length ? $('#sezPrincipale') : $('body');
+    const out = new Map();
+    root.find('section.Corniciato').each((_, el) => {
+        const section = $(el);
+        const giro = parseGiroCadutaLabel(section.find('h4').first().text());
+        if (giro == null)
+            return;
+        section.find('.ContradaCaduta .ContradaBox').each((__, boxEl) => {
+            const box = $(boxEl);
+            const rawCode = extractOnclickCode(box.find('a[onclick*="DC("]').first(), 'DC') ||
+                extractOnclickCode(box.find('[onclick*="DC("]').first(), 'DC');
+            if (!rawCode)
+                return;
+            const code = normalizeContradaCode(rawCode);
+            const prev = out.get(code);
+            if (prev == null || giro < prev)
+                out.set(code, giro);
+        });
+    });
+    return out;
+}
+/** Normalizza etichetta prova da h4 (senza menu Ingresso/Ordine/Cadute). */
+function parseProvaEtichetta(h4Text) {
+    const t = String(h4Text || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    const cut = t.split(/\s+Ingresso\s+al\s+canape/i)[0].trim();
+    const head = cut.split(':')[0].trim();
+    if (/^provaccia$/i.test(head))
+        return 'Provaccia';
+    if (/^prova\s+generale$/i.test(head))
+        return 'Prova Generale';
+    if (/^prima\s+prova$/i.test(head))
+        return 'Prima prova';
+    if (/^seconda\s+prova$/i.test(head))
+        return 'Seconda prova';
+    if (/^terza\s+prova$/i.test(head))
+        return 'Terza prova';
+    if (/^quarta\s+prova$/i.test(head))
+        return 'Quarta prova';
+    return head || null;
+}
+function normalizeFantinoLabel(raw) {
+    return String(raw || '')
+        .replace(/\u00a0/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+function isInvalidFantinoSourceId(sourceId) {
+    if (sourceId == null || sourceId === '')
+        return true;
+    const s = String(sourceId).trim();
+    return s === '-1' || s === '0' || !/^\d+$/.test(s);
+}
+/**
+ * Prove: soli blocchi ingresso canape `div[data-icprova]` (0–5 → numero 1–6).
+ * Ignora ordine arrivo / cadute delle prove. Nessun cavallo in output.
+ */
+export function parseProve(html) {
+    const $ = cheerio.load(html);
+    const root = $('#sezPrincipale').length ? $('#sezPrincipale') : $('body');
+    const out = [];
+    root.find('[data-icprova]').each((_, el) => {
+        const block = $(el);
+        const idx = Number(block.attr('data-icprova'));
+        if (!Number.isInteger(idx) || idx < 0 || idx > 5)
+            return;
+        const numero = idx + 1;
+        let etichetta = null;
+        const titleSpan = root.find(`[data-titoloprova="${idx}"]`).first();
+        if (titleSpan.length) {
+            const h4 = titleSpan.closest('h4');
+            etichetta = parseProvaEtichetta(h4.length ? h4.text() : titleSpan.parent().text());
+        }
+        if (!etichetta) {
+            const defaults = [
+                'Prima prova',
+                'Seconda prova',
+                'Terza prova',
+                'Quarta prova',
+                'Prova Generale',
+                'Provaccia',
+            ];
+            etichetta = defaults[idx];
+        }
+        const rows = [];
+        block.find('.ContradaBox').each((__, boxEl) => {
+            const box = $(boxEl);
+            const label = box.children('div').first().text().trim();
+            if (!label || label.includes('{{'))
+                return;
+            const contradaLink = box.find('a[onclick*="DC("]').first();
+            const rawCode = extractOnclickCode(contradaLink, 'DC');
+            if (!rawCode)
+                return;
+            const contradaCode = normalizeContradaCode(rawCode);
+            if (isNonPartecipaLabel(label)) {
+                rows.push({
+                    contradaCode,
+                    canape: null,
+                    nonPartecipa: true,
+                    fantino: null,
+                });
+                return;
+            }
+            let canape;
+            try {
+                canape = mapCanapeLabel(label);
+            }
+            catch {
+                return;
+            }
+            if (canape == null)
+                return;
+            const fantinoEl = box.find('[name="Fantino"]').first();
+            const fantinoSourceId = extractOnclickCode(fantinoEl, 'DF');
+            const fantinoLabel = normalizeFantinoLabel(fantinoEl.text());
+            let fantino = null;
+            if (!isInvalidFantinoSourceId(fantinoSourceId) &&
+                fantinoLabel &&
+                fantinoLabel !== '-') {
+                fantino = { sourceId: String(fantinoSourceId).trim(), label: fantinoLabel };
+            }
+            rows.push({
+                contradaCode,
+                canape,
+                nonPartecipa: false,
+                fantino,
+            });
+        });
+        if (rows.length) {
+            out.push({ numero, etichetta, rows });
+        }
+    });
+    out.sort((a, b) => a.numero - b.numero);
     return out;
 }
 /**
@@ -322,6 +604,20 @@ function findCorniciatoByHeading($, heading) {
         return undefined;
     });
     return found;
+}
+/**
+ * Pittore del drappellone dal pannello sommario (#spAutoreDrappellone).
+ * Es. «di <strong>Ismaele Nones</strong>» → «Ismaele Nones».
+ */
+export function parsePittoreDrappellone($) {
+    const el = $('#spAutoreDrappellone');
+    if (!el.length)
+        return null;
+    const fromStrong = el.find('strong').first().text().trim();
+    if (fromStrong)
+        return fromStrong;
+    const raw = el.text().replace(/^\s*di\s+/i, '').trim();
+    return raw || null;
 }
 function parseVintoDa($) {
     const box = findCorniciatoByHeading($, 'Vinto da');

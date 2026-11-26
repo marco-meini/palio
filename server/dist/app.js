@@ -1,10 +1,11 @@
 import cookieParser from 'cookie-parser';
-import cors from 'cors';
 import express, { json } from 'express';
 import { AuthController } from './controllers/auth.controller.js';
 import { ChatController } from './controllers/chat.controller.js';
 import { HealthController } from './controllers/health.controller.js';
+import { UsersController } from './controllers/users.controller.js';
 import { Environment } from './environment.js';
+import { errorHandler } from './lib/http-error.js';
 export class App {
     env;
     express;
@@ -14,20 +15,17 @@ export class App {
     }
     async init() {
         await this.env.init();
-        const { corsOrigin } = this.env.config.server;
-        this.express.use(cors({
-            origin: corsOrigin,
-            methods: ['GET', 'POST', 'OPTIONS'],
-            credentials: true,
-        }));
+        // dietro un reverse proxy (nginx / Caddy): IP e protocollo reali dagli header X-Forwarded-*
+        this.express.set('trust proxy', 1);
+        this.express.disable('x-powered-by');
         this.express.use(json());
         this.express.use(cookieParser());
-        const health = new HealthController(this.env);
-        const auth = new AuthController(this.env);
-        const chat = new ChatController(this.env);
-        this.express.use('/api', health.router);
-        this.express.use('/api/auth', auth.router);
-        this.express.use('/api', chat.router);
+        // Frontend e API sullo stesso origin (proxy in dev, nginx in prod): niente CORS.
+        this.express.use('/api', new HealthController(this.env).router);
+        this.express.use('/api/auth', new AuthController(this.env).router);
+        this.express.use('/api', new UsersController(this.env).router);
+        this.express.use('/api', new ChatController(this.env).router);
+        this.express.use(errorHandler);
     }
 }
 //# sourceMappingURL=app.js.map

@@ -1,16 +1,19 @@
 #!/usr/bin/env node
 // @ts-nocheck
 import pg from 'pg';
+import { loadEnvFiles } from '../load-env.js';
 import { loadPgConfig } from '../lib/db-config.js';
 import { fetchHtml, sleep } from '../lib/https-requests.js';
-import { assegnazioneCavalliUrl, dirigenzeUrl, ingressoCanapeUrl, isEstrattaDaSindaco, normalizeContradaCode, ordineArrivoUrl, ordineEstrazioneUrl, parseAssegnazioneCavalli, parseDirigenze, parseIngressoCanape, parseOrdineArrivo, parseOrdineEstrazione, parsePalioPage, prevPalioUrlFromHtml, sommarioUrl, sourceCodeFromUrl, } from '../lib/ilpalio-parser.js';
+import { assegnazioneCavalliUrl, caduteUrl, dirigenzeUrl, ingressoCanapeUrl, isEstrattaDaSindaco, normalizeContradaCode, ordineArrivoUrl, ordineEstrazioneUrl, parseAssegnazioneCavalli, parseCadute, parseDirigenze, parseIngressoCanape, parseOrdineArrivo, parseOrdineEstrazione, parsePalioPage, parseProve, prevPalioUrlFromHtml, proveUrl, sommarioUrl, sourceCodeFromUrl, } from '../lib/ilpalio-parser.js';
 import { nameFromCode } from '../lib/contrade-codes.js';
 import { getOrCreateBarbaresco, getOrCreateCapitano, getOrCreateCavallo, getOrCreateFantino, getOrCreateMangini, getOrCreatePriore, loadContradeMap, } from '../lib/entities.js';
+import { recomputeContradaCuffia } from '../lib/recompute-contrada-cuffia.js';
+loadEnvFiles();
 const DEFAULT_START = ingressoCanapeUrl('202507020');
 const HELP_TEXT = `Usage: node tasks/scrape-ilpalio.js [options]
 
 Full import per Palio: sommario, ingresso-canape, dirigenze, ordine-estrazione,
-assegnazione-cavalli, ordine-arrivo. Crawls backwards via "Palio precedente".
+assegnazione-cavalli, ordine-arrivo, cadute, prove. Crawls backwards via "Palio precedente".
 
 Options:
   --start URL              First ingresso-canape URL (default: ${DEFAULT_START})
@@ -69,21 +72,28 @@ function normalizeStartUrl(url) {
     }
     return url;
 }
-async function persistPalio(client, sommario, canapeRows, contradeByName, ordineByCode, assegnazioneByCode, arrivoByCode, dirigenzeByCode) {
+async function persistPalio(client, sommario, canapeRows, contradeByName, ordineByCode, assegnazioneByCode, arrivoByCode, caduteByCode, proveList, dirigenzeByCode) {
     if (!sommario.vincitrice) {
         throw new Error('No winner row to import');
     }
     const winnerCode = sommario.vincitrice.contradaCode;
-    const upsert = await client.query(`INSERT INTO palii (source_code, data_palio, straordinario)
-     VALUES ($1, $2::date, $3)
+    const upsert = await client.query(`INSERT INTO palii (source_code, data_palio, straordinario, pittore_drappellone)
+     VALUES ($1, $2::date, $3, $4)
      ON CONFLICT (source_code) DO UPDATE
        SET data_palio = EXCLUDED.data_palio,
-           straordinario = EXCLUDED.straordinario
-     RETURNING id`, [sommario.sourceCode, sommario.dataPalio, sommario.straordinario]);
+           straordinario = EXCLUDED.straordinario,
+           pittore_drappellone = EXCLUDED.pittore_drappellone
+     RETURNING id`, [
+        sommario.sourceCode,
+        sommario.dataPalio,
+        sommario.straordinario,
+        sommario.pittoreDrappellone ?? null,
+    ]);
     const palioId = upsert.rows[0].id;
     await client.query(`DELETE FROM palio_partecipazione_mangini
      WHERE partecipazione_id IN (SELECT id FROM palio_partecipazioni WHERE palio_id = $1)`, [palioId]);
     await client.query('DELETE FROM palio_partecipazioni WHERE palio_id = $1', [palioId]);
+    await client.query('DELETE FROM palio_prove WHERE palio_id = $1', [palioId]);
     const v = sommario.vincitrice;
     let partecipazioni = 0;
     for (const row of canapeRows) {
@@ -165,6 +175,12 @@ async function persistPalio(client, sommario, canapeRows, contradeByName, ordine
                 ordineArrivo = pos;
             }
         }
+        let giroCaduta = null;
+        if (!nonPartecipa && caduteByCode?.size) {
+            const giro = caduteByCode.get(codeKey);
+            if (giro != null)
+                giroCaduta = giro;
+        }
         const dirigenza = dirigenzeByCode?.get(codeKey);
         if (dirigenzeByCode?.size && !dirigenza) {
             process.stderr.write(`WARN: no dirigenze match for ${row.contradaCode} (${contradaName})\n`);
@@ -182,9 +198,9 @@ async function persistPalio(client, sommario, canapeRows, contradeByName, ordine
          palio_id, contrada_id, vincitrice, non_partecipa, canape,
          ordine, estratta, estratta_da_id,
          ordine_assegnazione, orecchio, coscia, proprietario_cavallo, cavallo_preso_da,
-         ordine_arrivo,
+         ordine_arrivo, giro_caduta,
          cavallo_id, fantino_id, capitano_id, priore_id, barbaresco_id
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING id`, [
             palioId,
             contradaId,
@@ -200,6 +216,7 @@ async function persistPalio(client, sommario, canapeRows, contradeByName, ordine
             nonPartecipa ? null : proprietarioCavallo,
             nonPartecipa ? null : cavalloPresoDa,
             nonPartecipa ? null : ordineArrivo,
+            nonPartecipa ? null : giroCaduta,
             nonPartecipa ? null : cavalloId,
             nonPartecipa ? null : fantinoId,
             capitanoId,
@@ -213,6 +230,39 @@ async function persistPalio(client, sommario, canapeRows, contradeByName, ordine
             await client.query(`INSERT INTO palio_partecipazione_mangini (partecipazione_id, mangini_id, ordine)
          VALUES ($1, $2, $3)
          ON CONFLICT DO NOTHING`, [ins.rows[0].id, manginiId, i]);
+        }
+    }
+    if (proveList?.length) {
+        for (const prova of proveList) {
+            for (const prow of prova.rows) {
+                const contradaName = nameFromCode(prow.contradaCode);
+                const contradaId = contradeByName.get(contradaName);
+                if (!contradaId) {
+                    process.stderr.write(`WARN: unknown prova contrada ${prow.contradaCode} (prova ${prova.numero})\n`);
+                    continue;
+                }
+                let fantinoId = null;
+                if (!prow.nonPartecipa && prow.fantino?.sourceId) {
+                    const label = String(prow.fantino.label || '').trim();
+                    const tokens = label.split(/\s+/).filter(Boolean);
+                    const isFullName = tokens.length >= 2;
+                    fantinoId = await getOrCreateFantino(client, {
+                        sourceId: prow.fantino.sourceId,
+                        nome: label,
+                        soprannome: isFullName ? null : label,
+                    }, { fullNome: isFullName });
+                }
+                await client.query(`INSERT INTO palio_prove (
+             palio_id, numero, contrada_id, canape, fantino_id, non_partecipa
+           ) VALUES ($1, $2, $3, $4, $5, $6)`, [
+                    palioId,
+                    prova.numero,
+                    contradaId,
+                    prow.nonPartecipa ? null : prow.canape,
+                    fantinoId,
+                    Boolean(prow.nonPartecipa),
+                ]);
+            }
         }
     }
     return { palioId, partecipazioni };
@@ -340,11 +390,43 @@ async function main() {
                 if (opts.failFast)
                     throw err;
             }
+            await sleep(opts.delayMs);
+            const cadutePageUrl = caduteUrl(code);
+            let caduteByCode = null;
+            try {
+                const caduteHtml = await fetchHtml(cadutePageUrl);
+                caduteByCode = parseCadute(caduteHtml);
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                console.error(`WARN (cadute): ${msg}`);
+                if (opts.failFast)
+                    throw err;
+            }
+            await sleep(opts.delayMs);
+            let proveList = null;
+            try {
+                const proveHtml = await fetchHtml(proveUrl(code));
+                proveList = parseProve(proveHtml);
+            }
+            catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                console.error(`WARN (prove): ${msg}`);
+                if (opts.failFast)
+                    throw err;
+            }
             try {
                 await client.query('BEGIN');
-                const { partecipazioni } = await persistPalio(client, sommario, canapeRows, contradeByName, ordineByCode, assegnazioneByCode, arrivoByCode, dirigenzeByCode);
+                const { partecipazioni } = await persistPalio(client, sommario, canapeRows, contradeByName, ordineByCode, assegnazioneByCode, arrivoByCode, caduteByCode, proveList, dirigenzeByCode);
                 await client.query('COMMIT');
-                console.error(`ok (${partecipazioni} partecipazioni)`);
+                try {
+                    const cuffia = await recomputeContradaCuffia(pool);
+                    console.error(`ok (${partecipazioni} partecipazioni; cuffia ${cuffia.periods} periodi)`);
+                }
+                catch (cuffiaErr) {
+                    const msg = cuffiaErr instanceof Error ? cuffiaErr.message : String(cuffiaErr);
+                    console.error(`ok (${partecipazioni} partecipazioni; WARN cuffia: ${msg})`);
+                }
                 count++;
                 if (opts.untilDate && sommario.dataPalio < opts.untilDate) {
                     url = null;

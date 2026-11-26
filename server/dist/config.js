@@ -1,6 +1,5 @@
 import path from 'node:path';
 import { homedir } from 'node:os';
-import { mergeGoogleOAuthCredentials } from './lib/google-oauth.js';
 import { loadEnvFiles } from './load-env.js';
 import { repoRoot } from './paths.js';
 let cachedConfig = null;
@@ -21,12 +20,11 @@ function envString(raw, defaultValue = '') {
     return raw;
 }
 function buildConfigFromEnv() {
-    const googleOAuthPath = process.env.GOOGLE_OAUTH_JSON_PATH ??
-        path.join(repoRoot, 'server/config/google-oauth.json');
     return {
         anthropic: {
             apiKey: envString(process.env.ANTHROPIC_API_KEY),
             model: envString(process.env.ANTHROPIC_MODEL, 'claude-sonnet-4-6'),
+            titleModel: envString(process.env.ANTHROPIC_TITLE_MODEL, envString(process.env.ANTHROPIC_MODEL, 'claude-sonnet-4-6')),
             maxOutputTokens: envInt(process.env.ANTHROPIC_MAX_OUTPUT_TOKENS, 4096),
             maxToolSteps: envInt(process.env.ANTHROPIC_MAX_TOOL_STEPS, 12),
             maxRegolamentoCalls: envInt(process.env.ANTHROPIC_MAX_REGOLAMENTO_CALLS, 2),
@@ -42,15 +40,6 @@ function buildConfigFromEnv() {
         },
         server: {
             port: envInt(process.env.SERVER_PORT, 3001),
-            corsOrigin: envString(process.env.CORS_ORIGIN, 'http://localhost:4200'),
-        },
-        auth: {
-            enabled: envBool(process.env.AUTH_ENABLED, false),
-            sessionSecret: envString(process.env.AUTH_SESSION_SECRET),
-            sessionTtlSeconds: envInt(process.env.AUTH_SESSION_TTL_SECONDS, 604800),
-            google: mergeGoogleOAuthCredentials(undefined, googleOAuthPath),
-            publicApiUrl: envString(process.env.AUTH_PUBLIC_API_URL, 'http://localhost:3001'),
-            publicAppUrl: envString(process.env.AUTH_PUBLIC_APP_URL, 'http://localhost:4200'),
         },
         postgres: {
             cli: envString(process.env.POSTGRES_CLI, path.join(homedir(), '.agents/skills/postgres/scripts/postgres')),

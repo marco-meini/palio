@@ -64,6 +64,9 @@ export class OidcClient {
         ].join(' '),
         code_challenge: await oidc.calculatePKCECodeChallenge(params.codeVerifier),
         code_challenge_method: 'S256',
+        // sempre la scelta dell'account: una sessione ZITADEL rimasta nel browser (es. di un
+        // utente senza accesso a Dimmelo) non deve entrare da sola né bloccare gli altri
+        prompt: 'select_account',
         state: params.state,
         nonce: params.nonce,
         ...(params.selectAccount ? { prompt: 'select_account' } : {}),
