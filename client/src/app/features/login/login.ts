@@ -9,6 +9,7 @@ const ERRORS: Record<string, string> = {
   negato:
     'L’account con cui sei entrato non ha accesso a Dimmelo. Accedi con un altro account, oppure chiedi a chi gestisce gli utenti di invitarti.',
   servizio: 'Il servizio di accesso non risponde. Riprova tra poco.',
+  invito: 'Il link d’invito non è valido. Chiedi a chi ti ha invitato di mandartene uno nuovo.',
 };
 
 /** Pagina di accesso: porta alla pagina di login del servizio di identità (passkey o Google). */

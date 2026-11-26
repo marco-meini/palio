@@ -119,10 +119,11 @@ export class ZitadelService {
 
   /**
    * Link monouso per registrare una passkey sulla pagina di login di ZITADEL. ZITADEL restituisce
-   * il codice (non manda email): il link lo condivide chi invita. Con il Login V2 la pagina
-   * registra la passkey da sola e la chiama col browser e sistema (nessun nome da inserire).
+   * il codice (non manda email): il link lo condivide chi invita. Con il Login V2 il link è di
+   * Dimmelo (`/api/auth/invito`): avvia un login e registra la passkey dentro quello, così
+   * l'utente finisce in Dimmelo; la pagina del Login V2 non chiede il nome del dispositivo.
    */
-  async passkeyRegistrationLink(userId: string): Promise<string> {
+  async passkeyRegistrationLink(userId: string, appUrl: string): Promise<string> {
     const { code } = await this.request<{ code: { id: string; code: string } }>(
       'POST',
       `/v2/users/${enc(userId)}/passkeys/registration_link`,
@@ -131,7 +132,7 @@ export class ZitadelService {
     const organization = await this.organizationId();
     if (this.config.loginV2) {
       const params = new URLSearchParams({ userId, organization, codeId: code.id, code: code.code });
-      return `${this.config.url}/ui/v2/login/passkey/set?${params.toString()}`;
+      return `${appUrl}/api/auth/invito?${params.toString()}`;
     }
     const params = new URLSearchParams({ userID: userId, orgID: organization, codeID: code.id, code: code.code });
     return `${this.config.url}/ui/login/login/passwordless/init?${params.toString()}`;

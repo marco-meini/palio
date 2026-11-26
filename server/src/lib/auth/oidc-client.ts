@@ -15,6 +15,14 @@ export interface OidcIdentity {
   idToken: string | null;
 }
 
+/** Codice d'invito di ZITADEL per registrare la passkey di un utente (Login V2). */
+export interface PasskeyInvite {
+  userId: string;
+  organization: string;
+  codeId: string;
+  code: string;
+}
+
 /** Il refresh token non vale più (revocato, utente disattivato, ruoli tolti…): sessione chiusa. */
 export class RefreshRejectedError extends Error {}
 
@@ -72,6 +80,35 @@ export class OidcClient {
         ...(params.selectAccount ? { prompt: 'select_account' } : {}),
       })
       .toString();
+  }
+
+  /**
+   * Pagina del Login V2 che registra la passkey dell'invito *dentro* un login OIDC: dopo la
+   * passkey l'utente entra con quella e ZITADEL torna al callback di Dimmelo. Senza un login in
+   * corso il Login V2 si fermerebbe su "Sei connesso". La richiesta di login la crea il server:
+   * ZITADEL risponde con un redirect che ne contiene l'id (`…/login?authRequest=V2_…`), che il
+   * Login V2 chiama `oidc_<id>`. Non serve il browser: il Login V2 la lega alla sessione che
+   * crea quando l'utente entra con la passkey.
+   */
+  async invitePasskeyUrl(authorizationUrl: string, invite: PasskeyInvite): Promise<string> {
+    let location: string | null;
+    try {
+      const response = await fetch(authorizationUrl, {
+        redirect: 'manual',
+        signal: AbortSignal.timeout(10_000),
+      });
+      location = response.headers.get('location');
+    } catch (error) {
+      throw this.wrap(error, "richiesta di login per l'invito");
+    }
+    const authRequest = location
+      ? new URL(location, this.config.zitadel.url).searchParams.get('authRequest')
+      : null;
+    if (!authRequest) {
+      throw this.wrap(new Error(`redirect inatteso: ${location ?? 'nessuno'}`), "richiesta di login per l'invito");
+    }
+    const params = new URLSearchParams({ ...invite, requestId: `oidc_${authRequest}` });
+    return `${this.config.zitadel.url}/ui/v2/login/passkey/set?${params.toString()}`;
   }
 
   /** Scambia il codice del callback (query string ricevuta) con i token e li verifica. */

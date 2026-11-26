@@ -23,15 +23,15 @@ describe('ZitadelService.passkeyRegistrationLink', () => {
 
   it('Login V1: pagina passwordless/init (chiede il nome del dispositivo)', async () => {
     stubCode();
-    const url = new URL(await new ZitadelService(config(false)).passkeyRegistrationLink('u1'));
+    const url = new URL(await new ZitadelService(config(false)).passkeyRegistrationLink('u1', 'https://app.example.com'));
     assert.equal(url.pathname, '/ui/login/login/passwordless/init');
     assert.deepEqual(Object.fromEntries(url.searchParams), { userID: 'u1', orgID: 'org1', codeID: 'c1', code: 'SECRET' });
   });
 
-  it('Login V2: pagina passkey/set (nome automatico)', async () => {
+  it('Login V2: link di Dimmelo che avvia il login con la passkey', async () => {
     stubCode();
-    const url = new URL(await new ZitadelService(config(true)).passkeyRegistrationLink('u1'));
-    assert.equal(url.origin + url.pathname, 'https://id.example.com/ui/v2/login/passkey/set');
+    const url = new URL(await new ZitadelService(config(true)).passkeyRegistrationLink('u1', 'https://app.example.com'));
+    assert.equal(url.origin + url.pathname, 'https://app.example.com/api/auth/invito');
     assert.deepEqual(Object.fromEntries(url.searchParams), {
       userId: 'u1',
       organization: 'org1',

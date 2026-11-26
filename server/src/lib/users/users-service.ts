@@ -182,7 +182,7 @@ export class UsersService {
 
   private async inviteFor(userId: string): Promise<InviteDto> {
     if (await this.zitadel.hasLoginMethod(userId)) return { kind: 'login', url: this.appUrl };
-    return { kind: 'passkey', url: await this.zitadel.passkeyRegistrationLink(userId) };
+    return { kind: 'passkey', url: await this.zitadel.passkeyRegistrationLink(userId, this.appUrl) };
   }
 
   private async call<T>(fn: () => Promise<T>): Promise<T> {

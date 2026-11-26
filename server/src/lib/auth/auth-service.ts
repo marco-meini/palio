@@ -3,7 +3,7 @@ import type { ModelAuth } from '../../model/auth.model.js';
 import { forbidden } from '../http-error.js';
 import type { AuthUser } from './auth-types.js';
 import { LOGIN_STATE_TTL_MS, type LoginState, safeReturnTo } from './login-state.js';
-import type { OidcClient } from './oidc-client.js';
+import type { OidcClient, PasskeyInvite } from './oidc-client.js';
 import type { CreatedSession, SessionService } from './session-service.js';
 
 export const NO_ACCESS =
@@ -21,7 +21,7 @@ export interface SignedIn {
  */
 export class AuthService {
   constructor(
-    private readonly oidc: Pick<OidcClient, 'authorizationUrl' | 'exchange' | 'endSessionUrl'>,
+    private readonly oidc: Pick<OidcClient, 'authorizationUrl' | 'exchange' | 'endSessionUrl' | 'invitePasskeyUrl'>,
     private readonly sessions: SessionService,
     private readonly model: ModelAuth,
   ) {}
@@ -35,14 +35,18 @@ export class AuthService {
     selectAccount = false,
     now = Date.now(),
   ): Promise<{ url: string; state: LoginState }> {
-    const state: LoginState = {
-      state: oidc.randomState(),
-      nonce: oidc.randomNonce(),
-      codeVerifier: oidc.randomPKCECodeVerifier(),
-      returnTo: safeReturnTo(returnTo),
-      expiresAt: now + LOGIN_STATE_TTL_MS,
-    };
+    const state = newLoginState(returnTo, now);
     return { url: await this.oidc.authorizationUrl({ ...state, selectAccount }), state };
+  }
+
+  /**
+   * Link d'invito (Login V2): login che parte dalla registrazione della passkey e finisce
+   * dentro Dimmelo, come un login normale (stesso cookie di stato, stesso callback).
+   */
+  async startInvite(invite: PasskeyInvite, now = Date.now()): Promise<{ url: string; state: LoginState }> {
+    const state = newLoginState('/', now);
+    const authorizationUrl = await this.oidc.authorizationUrl(state);
+    return { url: await this.oidc.invitePasskeyUrl(authorizationUrl, invite), state };
   }
 
   /**
@@ -70,4 +74,14 @@ export class AuthService {
     const idToken = sessionToken ? await this.sessions.destroy(sessionToken) : null;
     return this.oidc.endSessionUrl(idToken);
   }
+}
+
+function newLoginState(returnTo: unknown, now: number): LoginState {
+  return {
+    state: oidc.randomState(),
+    nonce: oidc.randomNonce(),
+    codeVerifier: oidc.randomPKCECodeVerifier(),
+    returnTo: safeReturnTo(returnTo),
+    expiresAt: now + LOGIN_STATE_TTL_MS,
+  };
 }

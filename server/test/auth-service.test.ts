@@ -28,6 +28,10 @@ function setup(permissions: OidcIdentity['permissions'] = ['chat.use']) {
       return identity(permissions);
     },
     endSessionUrl: async (idToken: string | null) => `https://id.example.com/end?hint=${idToken}`,
+    invitePasskeyUrl: async (authorizationUrl: string, invite: { code: string }) => {
+      calls.push(['invite', authorizationUrl, invite.code]);
+      return `https://id.example.com/ui/v2/login/passkey/set?code=${invite.code}`;
+    },
   };
   const sessions = {
     create: async (userId: number, ua: string | null, id: OidcIdentity) => {
@@ -69,6 +73,14 @@ describe('AuthService', () => {
     assert.ok(a.url.includes(`state=${a.state.state}`));
     assert.ok(!a.url.includes('prompt='));
     assert.ok((await service.startLogin('/', true)).url.includes('prompt=select_account'));
+  });
+
+  it('startInvite: login con stato nuovo agganciato alla pagina passkey, ritorno alla home', async () => {
+    const { service, calls } = setup();
+    const { url, state } = await service.startInvite({ userId: 'u1', organization: 'o1', codeId: 'c1', code: 'K' });
+    assert.equal(url, 'https://id.example.com/ui/v2/login/passkey/set?code=K');
+    assert.equal(state.returnTo, '/');
+    assert.deepEqual(calls.at(-1), ['invite', `https://id.example.com/oauth/v2/authorize?state=${state.state}`, 'K']);
   });
 
   it('finishLogin: profilo aggiornato e sessione con i permessi del token', async () => {
