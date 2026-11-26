@@ -35,6 +35,7 @@ async function main() {
     projectId: env('ZITADEL_PROJECT_ID'),
     token: env('ZITADEL_TOKEN'),
     organizationId: process.env['ZITADEL_ORG_ID'] || undefined,
+    loginV2: process.env['ZITADEL_LOGIN_V2'] === 'true',
   });
   const pool = new pg.Pool(loadPgConfig());
   try {

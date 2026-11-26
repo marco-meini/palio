@@ -119,7 +119,8 @@ export class ZitadelService {
 
   /**
    * Link monouso per registrare una passkey sulla pagina di login di ZITADEL. ZITADEL restituisce
-   * il codice (non manda email): il link lo condivide chi invita.
+   * il codice (non manda email): il link lo condivide chi invita. Con il Login V2 la pagina
+   * registra la passkey da sola e la chiama col browser e sistema (nessun nome da inserire).
    */
   async passkeyRegistrationLink(userId: string): Promise<string> {
     const { code } = await this.request<{ code: { id: string; code: string } }>(
@@ -127,13 +128,28 @@ export class ZitadelService {
       `/v2/users/${enc(userId)}/passkeys/registration_link`,
       { returnCode: {} },
     );
-    const params = new URLSearchParams({
-      userID: userId,
-      orgID: await this.organizationId(),
-      codeID: code.id,
-      code: code.code,
-    });
+    const organization = await this.organizationId();
+    if (this.config.loginV2) {
+      const params = new URLSearchParams({ userId, organization, codeId: code.id, code: code.code });
+      return `${this.config.url}/ui/v2/login/passkey/set?${params.toString()}`;
+    }
+    const params = new URLSearchParams({ userID: userId, orgID: organization, codeID: code.id, code: code.code });
     return `${this.config.url}/ui/login/login/passwordless/init?${params.toString()}`;
+  }
+
+  /**
+   * L'utente sa già entrare: ha una passkey o un login esterno collegato (es. Google). In quel
+   * caso non va mandato a registrare un'altra passkey: sul dispositivo dove ce l'ha già il
+   * browser rifiuta di crearne una seconda ("The object is in an invalid state").
+   */
+  async hasLoginMethod(userId: string): Promise<boolean> {
+    const { authMethodTypes } = await this.request<{ authMethodTypes?: string[] }>(
+      'GET',
+      `/v2/users/${enc(userId)}/authentication_methods`,
+    );
+    return (authMethodTypes ?? []).some(
+      (t) => t === 'AUTHENTICATION_METHOD_TYPE_PASSKEY' || t === 'AUTHENTICATION_METHOD_TYPE_IDP',
+    );
   }
 
   /** Accessi al progetto Dimmelo (tutti, o di un utente). */

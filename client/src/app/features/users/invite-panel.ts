@@ -9,14 +9,21 @@ import type { InviteDto } from '../../core/auth/dto';
       <div class="flex items-start justify-between gap-4">
         <div>
           <h2 class="font-semibold text-amber-900">Link d'invito per {{ name() }}</h2>
-          <p class="mt-1 text-sm text-amber-800">
-            Mandalo a {{ name() }}: aprendolo registra la sua passkey (Face ID, Touch ID o
-            chiavetta) e poi entra in Dimmelo. Vale una sola volta e scade presto: se non lo usa
-            subito, generane uno nuovo.
-          </p>
-          <p class="mt-1 text-sm text-amber-800">
-            Se usa Google con questa stessa email, può anche entrare direttamente con Google.
-          </p>
+          @if (invite().kind === 'login') {
+            <p class="mt-1 text-sm text-amber-800">
+              {{ name() }} ha già un account con cui entrare (passkey o Google): non serve
+              registrare niente. Mandagli questo link ed entra con il suo solito metodo.
+            </p>
+          } @else {
+            <p class="mt-1 text-sm text-amber-800">
+              Mandalo a {{ name() }}: aprendolo registra la sua passkey (Face ID, Touch ID o
+              chiavetta) e poi entra in Dimmelo. Vale una sola volta e scade presto: se non lo usa
+              subito, generane uno nuovo.
+            </p>
+            <p class="mt-1 text-sm text-amber-800">
+              Se usa Google con questa stessa email, può anche entrare direttamente con Google.
+            </p>
+          }
         </div>
         <button
           type="button"
@@ -64,9 +71,10 @@ export class InvitePanel {
 
   protected readonly copied = signal(false);
   protected readonly canShare = typeof navigator !== 'undefined' && 'share' in navigator;
-  private readonly message = computed(
-    () =>
-      `Ciao ${this.name()}, ecco il tuo link per creare la passkey ed entrare in Dimmelo: ${this.invite().url}`,
+  private readonly message = computed(() =>
+    this.invite().kind === 'login'
+      ? `Ciao ${this.name()}, ora hai accesso a Dimmelo: entra da qui con il tuo account: ${this.invite().url}`
+      : `Ciao ${this.name()}, ecco il tuo link per creare la passkey ed entrare in Dimmelo: ${this.invite().url}`,
   );
 
   protected async copy(): Promise<void> {

@@ -30,6 +30,6 @@ export function createAuthServices(pg: PgClientManager, config: AuthConfig): Aut
     guard: createAuthGuard(sessions, config.appUrl),
     sessions,
     auth: new AuthService(oidc, sessions, authModel),
-    users: new UsersService(new ZitadelService(config.zitadel), new ModelUsers(db)),
+    users: new UsersService(new ZitadelService(config.zitadel), new ModelUsers(db), config.appUrl),
   };
 }

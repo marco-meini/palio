@@ -46,10 +46,13 @@ export interface UserInputDto {
 }
 
 /**
- * Link per registrare una passkey sulla pagina di login di ZITADEL (monouso, scade dopo poco).
- * In alternativa l'utente entra con Google, se l'account Google ha la stessa email.
+ * Invito da mandare all'utente:
+ * - `passkey`: link monouso (scade presto) per registrare la passkey sulla pagina di accesso;
+ * - `login`: l'account sa già entrare (passkey o Google), basta il link di Dimmelo.
+ * Con `passkey` l'utente può anche entrare con Google, se l'account Google ha la stessa email.
  */
 export interface InviteDto {
+  kind: 'passkey' | 'login';
   url: string;
 }
 

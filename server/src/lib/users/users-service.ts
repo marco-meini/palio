@@ -20,6 +20,7 @@ export class UsersService {
   constructor(
     private readonly zitadel: ZitadelService,
     private readonly repository: ModelUsers,
+    private readonly appUrl: string,
   ) {}
 
   async list(): Promise<UserDto[]> {
@@ -41,7 +42,8 @@ export class UsersService {
 
   /**
    * Dà accesso a Dimmelo: collega l'account ZITADEL con quella email (es. già usato in
-   * un'altra app) o lo crea, assegna i ruoli e prepara il link per la passkey.
+   * un'altra app) o lo crea, assegna i ruoli e prepara l'invito (passkey o, se sa già entrare,
+   * il link di Dimmelo).
    */
   async create(input: UserInputDto, actor: AuthUser): Promise<CreateUserResponseDto> {
     this.checkAssignment(actor, input.permissions);
@@ -101,7 +103,7 @@ export class UsersService {
     });
   }
 
-  /** Nuovo link per registrare una passkey (es. il precedente è scaduto o l'ha persa). */
+  /** Nuovo invito (es. il link precedente è scaduto). */
   async invite(id: string, actor: AuthUser): Promise<InviteDto> {
     const grant = await this.find(id);
     this.checkCanManage(actor, grant);
@@ -179,7 +181,8 @@ export class UsersService {
   }
 
   private async inviteFor(userId: string): Promise<InviteDto> {
-    return { url: await this.zitadel.passkeyRegistrationLink(userId) };
+    if (await this.zitadel.hasLoginMethod(userId)) return { kind: 'login', url: this.appUrl };
+    return { kind: 'passkey', url: await this.zitadel.passkeyRegistrationLink(userId) };
   }
 
   private async call<T>(fn: () => Promise<T>): Promise<T> {

@@ -36,6 +36,11 @@ export interface ZitadelConfig {
   token: string | undefined;
   /** Organizzazione in cui creare gli utenti; se assente, quella del service account. */
   organizationId: string | undefined;
+  /**
+   * Il nuovo login di ZITADEL (Login V2, `/ui/v2/login`) è installato: i link d'invito usano
+   * la sua pagina, che registra la passkey senza chiedere il nome del dispositivo.
+   */
+  loginV2: boolean;
 }
 
 /** Applicazione web di Dimmelo su ZITADEL (tipo Web, autenticazione Basic). */
@@ -81,6 +86,7 @@ export function loadAuthConfig(): AuthConfig {
       projectId: required('ZITADEL_PROJECT_ID'),
       token: process.env['ZITADEL_TOKEN'] || undefined,
       organizationId: process.env['ZITADEL_ORG_ID'] || undefined,
+      loginV2: process.env['ZITADEL_LOGIN_V2'] === 'true',
     },
     oidc: {
       clientId: required('OIDC_CLIENT_ID'),

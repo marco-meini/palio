@@ -12,6 +12,8 @@ import type { ModelUsers } from '../src/model/users.model.js';
 class FakeZitadel {
   users = new Map<string, ZitadelUser>();
   grants = new Map<string, ZitadelGrant>();
+  /** account che sanno già entrare (passkey o Google) */
+  canLogin = new Set<string>();
   calls: string[] = [];
   private seq = 100;
 
@@ -50,6 +52,9 @@ class FakeZitadel {
   async passkeyRegistrationLink(id: string) {
     this.calls.push(`link:${id}`);
     return `https://id.example.com/ui/login/login/passwordless/init?userID=${id}`;
+  }
+  async hasLoginMethod(id: string) {
+    return this.canLogin.has(id);
   }
   async listGrants(userId?: string) {
     return [...this.grants.values()].filter((g) => !userId || g.userId === userId);
@@ -129,7 +134,7 @@ describe('UsersService (accessi su ZITADEL)', () => {
         new Map(ids.filter((id) => id === 'anna').map((id) => [id, new Date('2026-11-01')])),
       deleteSessions: async (id: string) => void sessionsClosed.push(id),
     } as unknown as ModelUsers;
-    service = new UsersService(zitadel as unknown as ZitadelService, repository);
+    service = new UsersService(zitadel as unknown as ZitadelService, repository, 'https://app.example.com');
   });
 
   it('list: stato da grant e ultimo accesso; disattivati in fondo', async () => {
@@ -149,6 +154,7 @@ describe('UsersService (accessi su ZITADEL)', () => {
     const { user, invite } = await service.create(input(), admin);
     assert.equal(user.email, 'bruno@example.com');
     assert.equal(user.status, 'invited');
+    assert.equal(invite.kind, 'passkey');
     assert.ok(invite.url.includes(`userID=${user.id}`));
     assert.deepEqual(zitadel.calls, ['create:bruno@example.com', `grant:${user.id}:chat.use`, `link:${user.id}`]);
   });
@@ -222,9 +228,20 @@ describe('UsersService (accessi su ZITADEL)', () => {
     await service.disable('capo', actor('admin2', ALL));
   });
 
+  it('create: account che sa già entrare → link di Dimmelo, nessuna nuova passkey', async () => {
+    // es. accesso tolto e ridato: la passkey è rimasta e il browser rifiuterebbe la seconda
+    zitadel.addUser('carla', 'carla@example.com');
+    zitadel.canLogin.add('carla');
+    const { invite } = await service.create(input({ email: 'carla@example.com' }), admin);
+    assert.deepEqual(invite, { kind: 'login', url: 'https://app.example.com' });
+    assert.ok(!zitadel.calls.some((c) => c.startsWith('link:')));
+  });
+
   it('invito: nuovo link solo per accessi attivi', async () => {
     assert.ok((await service.invite('anna', admin)).url.includes('userID=anna'));
     await rejects(service.invite('zoe', admin), 409, /disattivato/);
+    zitadel.canLogin.add('anna');
+    assert.equal((await service.invite('anna', admin)).kind, 'login');
   });
 });
 
