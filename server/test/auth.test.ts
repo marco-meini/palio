@@ -108,7 +108,11 @@ describe('TokenCrypto', () => {
     assert.notEqual(enc, 'refresh-token');
     assert.equal(crypto.decrypt(enc), 'refresh-token');
     assert.equal(new TokenCrypto('y'.repeat(32)).decrypt(enc), null);
-    assert.equal(crypto.decrypt(`${enc.slice(0, -2)}AA`), null);
+    // altera sempre un byte del cifrato (sostituire caratteri fissi a volte non cambia nulla)
+    const [iv, tag, data] = enc.split('.');
+    const tampered = Buffer.from(data!, 'base64url');
+    tampered[0]! ^= 0xff;
+    assert.equal(crypto.decrypt(`${iv}.${tag}.${tampered.toString('base64url')}`), null);
     assert.equal(crypto.decrypt('spazzatura'), null);
   });
 });
