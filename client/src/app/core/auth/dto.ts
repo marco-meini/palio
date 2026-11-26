@@ -3,17 +3,24 @@
  * `server/src/lib/auth/permissions.ts`): aggiornare entrambi i lati.
  */
 
-/** Permessi `<sezione>.<azione>`. Etichette e raggruppamento li espone `GET /api/permissions`. */
+/**
+ * Permessi `<sezione>.<azione>`: sono i ruoli del progetto Dimmelo su ZITADEL.
+ * Etichette e raggruppamento li espone `GET /api/permissions`.
+ */
 export type Permission = 'chat.use' | 'users.view' | 'users.manage';
 
 export interface CurrentUserDto {
-  id: number;
+  /** Id dell'utente su ZITADEL (lo stesso di `UserDto.id`). */
+  id: string;
   displayName: string;
   email: string | null;
-  /** Amministratore: tutti i permessi, anche quelli delle funzioni future. */
-  isAdmin: boolean;
-  /** Permessi effettivi: assegnati, impliciti (modificare → vedere), tutti se amministratore. */
+  /** Permessi effettivi: ruoli su ZITADEL più quelli impliciti (modificare → vedere). */
   permissions: Permission[];
+}
+
+/** Risposta del logout: dove mandare il browser per uscire anche da ZITADEL. */
+export interface LogoutResponseDto {
+  logoutUrl: string;
 }
 
 export interface PermissionDto {
@@ -31,46 +38,24 @@ export interface PermissionSectionDto {
   permissions: PermissionDto[];
 }
 
-/** Richiesta di recupero dell'accesso (`POST /api/auth/recovery`): risposta sempre 202. */
-export interface RecoveryRequestDto {
-  email: string;
-}
-
 /**
- * Opzioni WebAuthn in JSON, come le genera il provider di identità: i campi binari
- * (`challenge`, `user.id`, id delle credenziali) sono stringhe base64url.
- * Il frontend le converte prima di passarle a `navigator.credentials`.
+ * Stato di un utente su Dimmelo: `invited` = ha accesso ma non è mai entrato, `disabled` =
+ * accesso sospeso (permessi conservati).
  */
-export type WebAuthnOptionsJson = Record<string, unknown>;
-
-/** Passkey creata o usata dal browser, serializzata in JSON (binari in base64url). */
-export interface PasskeyCredentialDto {
-  id: string;
-  rawId: string;
-  type: string;
-  response: Record<string, string | null>;
-}
-
-export interface PasskeyLoginStartResponseDto {
-  /** Opzioni per `navigator.credentials.get`. */
-  options: WebAuthnOptionsJson;
-}
-
-/** Stato di un utente: `invited` = censito ma non ha ancora mai fatto l'accesso. */
 export type UserStatus = 'invited' | 'active' | 'disabled';
 
 export interface UserDto {
-  id: number;
+  /** Id dell'utente su ZITADEL. */
+  id: string;
   firstName: string;
   lastName: string;
   displayName: string;
   email: string;
-  phone: string | null;
-  isAdmin: boolean;
   /** Permessi assegnati (senza quelli impliciti). */
   permissions: Permission[];
   status: UserStatus;
   lastLoginAt: string | null;
+  /** Da quando ha accesso a Dimmelo. */
   createdAt: string;
 }
 
@@ -79,41 +64,21 @@ export interface UserInputDto {
   firstName: string;
   lastName: string;
   email: string;
-  phone: string | null;
-  isAdmin: boolean;
   permissions: Permission[];
 }
 
 export type CreateUserDto = UserInputDto;
 export type UpdateUserDto = UserInputDto;
 
-/** Link d'invito monouso: l'utente lo apre, crea la passkey ed entra. */
+/**
+ * Link per registrare una passkey sulla pagina di accesso (monouso, scade dopo poco).
+ * In alternativa l'utente entra con Google, se l'account Google ha la stessa email.
+ */
 export interface InviteDto {
   url: string;
-  expiresAt: string;
 }
 
 export interface CreateUserResponseDto {
   user: UserDto;
   invite: InviteDto;
-}
-
-/** Pagina pubblica dell'invito (`GET /api/invites/:token`). */
-export interface InviteStatusDto {
-  firstName: string;
-  email: string;
-  expiresAt: string;
-}
-
-/** Inizio della creazione della passkey (`POST /api/invites/:token/passkey/start`). */
-export interface PasskeyRegistrationStartResponseDto {
-  passkeyId: string;
-  /** Opzioni per `navigator.credentials.create`. */
-  options: WebAuthnOptionsJson;
-}
-
-/** Fine della creazione (`POST /api/invites/:token/passkey/finish`): risponde con l'utente entrato. */
-export interface PasskeyRegistrationFinishDto {
-  passkeyId: string;
-  credential: PasskeyCredentialDto;
 }

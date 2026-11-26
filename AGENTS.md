@@ -50,7 +50,7 @@ cd server && npm run index-regolamento
 - **Backend**: Express 5, TypeScript (`NodeNext`, ESM), `tsx` in dev, Vercel AI SDK + `@ai-sdk/anthropic`, `pg`, Cheerio, Zod
 - **Frontend**: Angular 21 standalone, signals, Tailwind 4, `marked` + DOMPurify
 - **DB**: Postgres; chat preferisce utente read-only (`CHAT_DATABASE_URL` / `palio_chat_ro`)
-- **Auth**: come dimora — passkey nella pagina di Dimmelo verificate da ZITADEL (headless, `lib/zitadel.ts`), sessioni server-side (cookie httpOnly `palio_sid`, in DB solo l'hash), utenti/permessi in `app_user`/`user_permission`, inviti e recupero via email
+- **Auth**: OIDC con ZITADEL (`lib/auth/oidc-client.ts`, `openid-client`; login su ZITADEL con passkey o Google), sessioni server-side (cookie httpOnly `palio_sid`, in DB solo l'hash, refresh token cifrato). Permessi = ruoli del progetto Dimmelo su ZITADEL; pagina Utenti via API di gestione (`lib/zitadel.ts`, user grant)
 
 Nota: il README può citare Fastify storicamente — il server è **Express**.
 
@@ -64,7 +64,7 @@ Nota: il README può citare Fastify storicamente — il server è **Express**.
 - `lib/` — logica riusabile (chat, auth, parser, pg, RAG)
 - `model/*.model.ts` — accesso dati Postgres (`ModelX`)
 - `tasks/` — CLI one-shot (scrape, index regolamento); non route HTTP
-- `lib/auth/`, `lib/users/` — login con passkey, sessioni, permessi, utenti, inviti, recupero; collegati in `auth-services.ts`
+- `lib/auth/`, `lib/users/` — login OIDC, sessioni, permessi, utenti (accessi al progetto su ZITADEL); collegati in `auth-services.ts`
 - `mcp/` — server MCP sidecar DB
 
 ### Moduli e naming
@@ -78,7 +78,7 @@ Nota: il README può citare Fastify storicamente — il server è **Express**.
 ### Autenticazione e permessi
 
 - Ogni rotta dichiara cosa serve: `env.auth.guard.public()`, `.anyUser()` o `.require('permesso', …)` — non esiste un default; le richieste non-GET devono avere `Origin` = `APP_URL`
-- Permessi `<sezione>.<azione>` definiti in `lib/auth/permissions.ts` (e nel tipo `Permission` del client, `core/auth/dto.ts`): una funzione nuova aggiunge lì i suoi
+- Permessi `<sezione>.<azione>` definiti in `lib/auth/permissions.ts` (e nel tipo `Permission` del client, `core/auth/dto.ts`): una funzione nuova aggiunge lì i suoi e crea lo stesso ruolo nel progetto Dimmelo su ZITADEL
 - Errori HTTP con `HttpError` (`lib/http-error.ts`): corpo `{ message, errors? }`, messaggi in italiano
 - Config auth (`auth-config.ts`) caricata solo dall'API: scraper/MCP/task non richiedono ZITADEL
 
@@ -126,7 +126,7 @@ UI esistente: palette ambrata/stone. Nuove schermate: allinearsi al look Dimmelo
 - Le migrazioni in produzione girano come superuser con il ruolo applicativo (`PG_APP_ROLE`, di norma `app_palio`): gli oggetti creati sono suoi.
 - Bootstrap: `db/bootstrap/` (istanza, DB, pgvector)
 - Config skill Postgres (non versionata): `.skills/postgres/config.toml`, profile tipico `local`
-- Email in `app_user`: unica senza distinzione di maiuscole (salvata minuscola). Tabelle di autenticazione mai leggibili da `palio_chat_ro`
+- Tabelle di autenticazione (`app_user`, `user_session`) mai leggibili da `palio_chat_ro`
 - Non esporre Postgres su Internet; in prod binding/host hardening documentati in `docker/harden-postgres.md`
 
 Prima di alterare schema: leggere CHANGELOG e colonne domain-specific sopra; non rinominare `canape`/`ordine` senza aggiornare scraper, chat knowledge e test.
@@ -138,7 +138,7 @@ Prima di alterare schema: leggere CHANGELOG e colonne domain-specific sopra; non
 - Dev: `.env` root (da `.env.example`)
 - Prod: `.env.production` (da `.env.production.example`); rilascio con `scripts/release.sh` (versione = tag `vX.Y.Z` via `npm version`, immagini dalla CI su GHCR) — vedi README «CI e rilascio in produzione»
 - Non commitare `.env`, token ZITADEL, dump con dati sensibili
-- Login sempre attivo (anche in dev, con il ZITADEL locale); health pubblico, chat con `chat.use`
+- Login sempre attivo (anche in dev, con il ZITADEL di produzione); health pubblico, chat con `chat.use`
 
 ### VPS — divieto assoluto senza richiesta esplicita
 

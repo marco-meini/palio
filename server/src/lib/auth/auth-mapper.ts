@@ -4,10 +4,9 @@ import { effectivePermissions } from './permissions.js';
 
 export function toCurrentUserDto(user: AuthUser): CurrentUserDto {
   return {
-    id: user.id,
+    id: user.idp_user_id,
     displayName: user.display_name,
     email: user.email,
-    isAdmin: user.is_admin,
-    permissions: effectivePermissions(user.is_admin, user.permissions),
+    permissions: effectivePermissions(user.permissions),
   };
 }

@@ -3,65 +3,75 @@ import { Abstract_Controller } from './abstract.controller.js';
 import type { Environment } from '../environment.js';
 import { currentUser } from '../lib/auth/auth-guard.js';
 import { toCurrentUserDto } from '../lib/auth/auth-mapper.js';
-import type { SignedIn } from '../lib/auth/auth-service.js';
 import { LOGIN_COOKIE, LOGIN_COOKIE_PATH, SESSION_COOKIE } from '../lib/auth/auth-types.js';
-import { emailFrom, isEmail } from '../lib/auth/email.js';
+import type { LogoutResponseDto } from '../lib/auth/dto.js';
 import { decodeLoginState, encodeLoginState, LOGIN_STATE_TTL_MS } from '../lib/auth/login-state.js';
-import { parseCredential } from '../lib/auth/passkey-credential.js';
-import { badRequest, unauthorized } from '../lib/http-error.js';
+import { LoginRejectedError } from '../lib/auth/oidc-client.js';
+import { HttpError } from '../lib/http-error.js';
+
+/** Codici d'errore del login, mostrati dalla pagina `/accesso?errore=<codice>`. */
+type LoginErrorCode = 'scaduto' | 'annullato' | 'negato' | 'servizio';
 
 /**
- * Accesso con passkey nella pagina di palio, uscita, utente corrente e recupero dell'accesso.
- * Montato su `/api/auth`.
+ * Accesso con OIDC (pagina di login di ZITADEL), uscita e utente corrente. Montato su
+ * `/api/auth`. `/login` e `/callback` sono navigazioni del browser (redirect), non chiamate XHR.
  */
 export class AuthController extends Abstract_Controller {
   constructor(env: Environment) {
     super(env, 'auth');
     const { guard } = env.auth;
-    this.router.post('/passkey/start', guard.public(), this.passkeyStart.bind(this));
-    this.router.post('/passkey/finish', guard.public(), this.passkeyFinish.bind(this));
+    this.router.get('/login', guard.public(), this.login.bind(this));
+    this.router.get('/callback', guard.public(), this.callback.bind(this));
     this.router.post('/logout', guard.public(), this.logout.bind(this));
     this.router.get('/me', guard.anyUser(), this.me.bind(this));
-    this.router.post('/recovery', guard.public(), this.recovery.bind(this));
   }
 
-  /**
-   * Inizio dell'accesso con passkey. Restituisce la challenge da far firmare al browser e
-   * tiene la sessione ZITADEL in un cookie firmato, valido pochi minuti.
-   */
-  private async passkeyStart(req: Request, res: Response): Promise<void> {
+  /** Va alla pagina di login di ZITADEL; lo stato del tentativo resta in un cookie firmato. */
+  private async login(req: Request, res: Response): Promise<void> {
     const { auth, config } = this.env.auth;
-    const email = emailFrom(req.body);
-    if (!isEmail(email)) throw badRequest('Email non valida');
-    const { options, state } = await auth.startLogin(email, req.ip ?? 'unknown');
-    res.cookie(LOGIN_COOKIE, encodeLoginState(state, config.cookieSecret), {
+    let target: { url: string; state: Parameters<typeof encodeLoginState>[0] };
+    try {
+      target = await auth.startLogin(req.query['returnTo']);
+    } catch {
+      return this.loginError(res, 'servizio');
+    }
+    res.cookie(LOGIN_COOKIE, encodeLoginState(target.state, config.cookieSecret), {
       httpOnly: true,
       secure: config.secureCookies,
-      sameSite: 'strict',
+      // lax: il ritorno da ZITADEL è una navigazione da un altro sito
+      sameSite: 'lax',
       path: LOGIN_COOKIE_PATH,
       maxAge: LOGIN_STATE_TTL_MS,
     });
-    res.send({ options });
+    res.redirect(target.url);
   }
 
-  /** Fine dell'accesso: se la passkey è valida apre la sessione di palio. */
-  private async passkeyFinish(req: Request, res: Response): Promise<void> {
-    const { auth, config } = this.env.auth;
+  /** Ritorno da ZITADEL: apre la sessione di palio e torna dove l'utente voleva andare. */
+  private async callback(req: Request, res: Response): Promise<void> {
+    const { auth, config, sessions } = this.env.auth;
     const raw = req.cookies?.[LOGIN_COOKIE] as string | undefined;
     res.clearCookie(LOGIN_COOKIE, { path: LOGIN_COOKIE_PATH });
     const state = raw ? decodeLoginState(raw, config.cookieSecret) : null;
-    if (!state) throw unauthorized('Accesso scaduto: riprova.');
-    const credential = parseCredential((req.body as { credential?: unknown } | null)?.credential);
-    const signedIn = await auth.finishLogin(state, credential, req.get('user-agent') ?? null);
-    this.startSession(res, signedIn);
+    if (!state) return this.loginError(res, 'scaduto');
+    const query = req.originalUrl.split('?')[1] ?? '';
+    try {
+      const { session, returnTo } = await auth.finishLogin(query, state, req.get('user-agent') ?? null);
+      res.cookie(SESSION_COOKIE, session.token, sessions.cookieOptions(session.expiresAt));
+      res.redirect(returnTo);
+    } catch (error) {
+      if (error instanceof LoginRejectedError) return this.loginError(res, 'annullato');
+      if (error instanceof HttpError && error.status === 403) return this.loginError(res, 'negato');
+      console.error(`[auth] Login non riuscito: ${(error as Error).message}`);
+      return this.loginError(res, 'servizio');
+    }
   }
 
-  /** Chiude la sessione su questo dispositivo. */
+  /** Chiude la sessione; il client manda poi il browser su `logoutUrl` (uscita da ZITADEL). */
   private async logout(req: Request, res: Response): Promise<void> {
     const { auth, sessions } = this.env.auth;
-    await auth.logout(req.cookies?.[SESSION_COOKIE] as string | undefined);
+    const logoutUrl = await auth.logout(req.cookies?.[SESSION_COOKIE] as string | undefined);
     res.clearCookie(SESSION_COOKIE, sessions.cookieOptions());
-    res.status(204).end();
+    res.send({ logoutUrl } satisfies LogoutResponseDto);
   }
 
   /** Utente corrente con i suoi permessi effettivi (401 se non autenticato). */
@@ -69,19 +79,7 @@ export class AuthController extends Abstract_Controller {
     res.send(toCurrentUserDto(currentUser(req)));
   }
 
-  /**
-   * Chi lo usa non riesce ad accedere. Risponde sempre 202 senza dire se l'email è censita;
-   * il link arriva solo all'indirizzo registrato. Limiti per IP e per email.
-   */
-  private recovery(req: Request, res: Response): void {
-    const email = emailFrom(req.body);
-    if (!isEmail(email)) throw badRequest('Email non valida');
-    this.env.auth.recovery.request(email, req.ip ?? 'unknown');
-    res.status(202).end();
-  }
-
-  private startSession(res: Response, { user, session }: SignedIn): void {
-    res.cookie(SESSION_COOKIE, session.token, this.env.auth.sessions.cookieOptions(session.expiresAt));
-    res.send(toCurrentUserDto(user));
+  private loginError(res: Response, code: LoginErrorCode): void {
+    res.redirect(`/accesso?errore=${code}`);
   }
 }

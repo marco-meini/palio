@@ -4,11 +4,6 @@ import { AppShell } from './core/layout/app-shell';
 
 export const routes: Routes = [
   {
-    path: 'accesso/recupero',
-    canActivate: [anonymousGuard],
-    loadComponent: () => import('./features/recovery/recovery').then((m) => m.Recovery),
-  },
-  {
     path: 'accesso',
     canActivate: [anonymousGuard],
     loadComponent: () => import('./features/login/login').then((m) => m.Login),
@@ -17,11 +12,6 @@ export const routes: Routes = [
     path: 'accesso-negato',
     loadComponent: () =>
       import('./features/access-denied/access-denied').then((m) => m.AccessDenied),
-  },
-  {
-    // link d'accesso (invito o recupero): pubblico, l'utente non ha ancora una passkey
-    path: 'invito/:token',
-    loadComponent: () => import('./features/invite/invite').then((m) => m.Invite),
   },
   {
     path: 'uscito',

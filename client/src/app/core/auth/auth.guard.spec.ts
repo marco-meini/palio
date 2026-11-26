@@ -29,7 +29,7 @@ async function setup(user: object | null) {
   return TestBed.inject(Router);
 }
 
-const anna = { id: 1, displayName: 'Anna', email: null, isAdmin: false, permissions: [] };
+const anna = { id: 'z-1', displayName: 'Anna', email: null, permissions: [] };
 
 describe('authGuard / anonymousGuard', () => {
   it('senza sessione porta alla pagina di accesso con la destinazione', async () => {

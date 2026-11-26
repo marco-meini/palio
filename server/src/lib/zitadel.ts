@@ -1,12 +1,13 @@
-import type { AuthConfig } from '../auth-config.js';
-import type { PasskeyCredentialDto, WebAuthnOptionsJson } from './auth/dto.js';
+import type { ZitadelConfig } from '../auth-config.js';
 import { badGateway, conflict } from './http-error.js';
 
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
-
-/** Utente di ZITADEL (i soli campi usati della User Service v2). */
+/** Utente di ZITADEL (i soli campi usati). */
 export interface ZitadelUser {
   userId: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  email: string;
 }
 
 export interface ZitadelUserInput {
@@ -14,6 +15,19 @@ export interface ZitadelUserInput {
   firstName: string;
   lastName: string;
   displayName: string;
+}
+
+/** Accesso di un utente al progetto (user grant): i ruoli sono i permessi di Dimmelo. */
+export interface ZitadelGrant {
+  grantId: string;
+  userId: string;
+  roleKeys: string[];
+  active: boolean;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  email: string;
+  createdAt: string;
 }
 
 /** Errore restituito da ZITADEL, con lo status HTTP e l'id dell'errore (es. `COMMAND-Eeb2a`). */
@@ -27,24 +41,40 @@ export class ZitadelError extends Error {
   }
 }
 
+interface GrantJson {
+  id: string;
+  userId: string;
+  roleKeys?: string[];
+  state?: string;
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
+  email?: string;
+  details?: { creationDate?: string };
+}
+
+interface UserJson {
+  userId: string;
+  details?: { resourceOwner?: string };
+  human?: {
+    profile?: { givenName?: string; familyName?: string; displayName?: string };
+    email?: { email?: string };
+  };
+}
+
 /**
- * Client delle API v2 di ZITADEL con il token del service account di palio (mai nel browser).
- * palio usa ZITADEL in modalità "headless": le schermate sono di palio, ZITADEL tiene le
- * identità condivise tra le app e verifica le passkey.
+ * Client delle API di gestione di ZITADEL con il token del service account di palio (mai nel
+ * browser): utenti (condivisi con le altre app) e loro accesso al progetto Dimmelo.
+ * Il login invece passa da OIDC (`lib/auth/oidc-client.ts`).
  */
 export class ZitadelService {
   private orgId?: Promise<string>;
 
-  constructor(private readonly config: AuthConfig) {
-    const url = new URL(config.zitadel.url);
-    if (url.protocol === 'http:' && !LOCAL_HOSTS.has(url.hostname)) {
-      throw new Error('ZITADEL_URL deve usare https (http è ammesso solo su localhost)');
-    }
-  }
+  constructor(private readonly config: ZitadelConfig) {}
 
   /** Utente umano con quella email (senza distinzione di maiuscole), se esiste. */
   async findUserByEmail(email: string): Promise<ZitadelUser | null> {
-    const { result } = await this.request<{ result?: ZitadelUser[] }>('POST', '/v2/users', {
+    const { result } = await this.request<{ result?: UserJson[] }>('POST', '/v2/users', {
       query: { limit: 2 },
       queries: [
         { emailQuery: { emailAddress: email, method: 'TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE' } },
@@ -54,10 +84,18 @@ export class ZitadelService {
     if ((result?.length ?? 0) > 1) {
       throw conflict(`Su ZITADEL ci sono più account con l'email ${email}`);
     }
-    return result?.[0] ?? null;
+    return result?.[0] ? toUser(result[0]) : null;
   }
 
-  /** Crea l'utente con email già verificata (la verifica la fa il link inviato da palio). */
+  async getUser(userId: string): Promise<ZitadelUser> {
+    const { user } = await this.request<{ user: UserJson }>('GET', `/v2/users/${enc(userId)}`);
+    return toUser(user);
+  }
+
+  /**
+   * Crea l'utente con email già verificata: chi lo invita garantisce l'indirizzo, e così il
+   * collegamento automatico con Google (stessa email) funziona.
+   */
   async createUser(input: ZitadelUserInput): Promise<string> {
     const { id } = await this.request<{ id: string }>('POST', '/v2/users/new', {
       organizationId: await this.organizationId(),
@@ -79,74 +117,74 @@ export class ZitadelService {
     });
   }
 
-  async deleteUser(userId: string): Promise<void> {
-    await this.request('DELETE', `/v2/users/${enc(userId)}`);
-  }
-
-  /** Avvia la registrazione di una passkey sul dominio delle passkey di palio. */
-  async startPasskeyRegistration(userId: string): Promise<{ passkeyId: string; options: WebAuthnOptionsJson }> {
-    const res = await this.request<{ passkeyId: string; publicKeyCredentialCreationOptions: WebAuthnOptionsJson }>(
-      'POST',
-      `/v2/users/${enc(userId)}/passkeys`,
-      { authenticator: 'PASSKEY_AUTHENTICATOR_UNSPECIFIED', domain: this.config.passkey.rpId },
-    );
-    return { passkeyId: res.passkeyId, options: unwrapPublicKey(res.publicKeyCredentialCreationOptions) };
-  }
-
-  async finishPasskeyRegistration(
-    userId: string,
-    passkeyId: string,
-    credential: PasskeyCredentialDto,
-    name: string,
-  ): Promise<void> {
-    await this.request('POST', `/v2/users/${enc(userId)}/passkeys/${enc(passkeyId)}`, {
-      publicKeyCredential: credential,
-      passkeyName: name,
-    });
-  }
-
-  /** Crea una sessione ZITADEL per l'utente con una challenge WebAuthn. */
-  async startLogin(userId: string): Promise<{ sessionId: string; options: WebAuthnOptionsJson }> {
-    const res = await this.request<{
-      sessionId: string;
-      challenges: { webAuthN: { publicKeyCredentialRequestOptions: WebAuthnOptionsJson } };
-    }>('POST', '/v2/sessions', {
-      checks: { user: { userId } },
-      challenges: {
-        webAuthN: { domain: this.config.passkey.rpId, userVerificationRequirement: 'USER_VERIFICATION_REQUIREMENT_REQUIRED' },
-      },
-    });
-    return {
-      sessionId: res.sessionId,
-      options: unwrapPublicKey(res.challenges.webAuthN.publicKeyCredentialRequestOptions),
-    };
-  }
-
   /**
-   * Fa verificare a ZITADEL la firma della passkey e restituisce l'utente della sessione.
-   * La sessione ZITADEL serve solo a questo: poi viene eliminata (palio ha la sua).
+   * Link monouso per registrare una passkey sulla pagina di login di ZITADEL. ZITADEL restituisce
+   * il codice (non manda email): il link lo condivide chi invita.
    */
-  async finishLogin(sessionId: string, credential: PasskeyCredentialDto): Promise<string> {
-    try {
-      await this.request('PATCH', `/v2/sessions/${enc(sessionId)}`, {
-        checks: { webAuthN: { credentialAssertionData: credential } },
-      });
-      const { session } = await this.request<{
-        session: { factors?: { user?: { id?: string }; webAuthN?: { verifiedAt?: string; userVerified?: boolean } } };
-      }>('GET', `/v2/sessions/${enc(sessionId)}`);
-      const userId = session.factors?.user?.id;
-      if (!userId || !session.factors?.webAuthN?.verifiedAt || !session.factors.webAuthN.userVerified) {
-        throw new ZitadelError(401, 'Passkey non verificata', undefined);
-      }
-      return userId;
-    } finally {
-      await this.request('DELETE', `/v2/sessions/${enc(sessionId)}`, {}).catch(() => undefined);
+  async passkeyRegistrationLink(userId: string): Promise<string> {
+    const { code } = await this.request<{ code: { id: string; code: string } }>(
+      'POST',
+      `/v2/users/${enc(userId)}/passkeys/registration_link`,
+      { returnCode: {} },
+    );
+    const params = new URLSearchParams({
+      userID: userId,
+      orgID: await this.organizationId(),
+      codeID: code.id,
+      code: code.code,
+    });
+    return `${this.config.url}/ui/login/login/passwordless/init?${params.toString()}`;
+  }
+
+  /** Accessi al progetto Dimmelo (tutti, o di un utente). */
+  async listGrants(userId?: string): Promise<ZitadelGrant[]> {
+    const grants: ZitadelGrant[] = [];
+    const limit = 500;
+    for (let offset = 0; ; offset += limit) {
+      const { result } = await this.request<{ result?: GrantJson[] }>(
+        'POST',
+        '/management/v1/users/grants/_search',
+        {
+          query: { offset: String(offset), limit, asc: true },
+          queries: [
+            { projectIdQuery: { projectId: this.config.projectId } },
+            ...(userId ? [{ userIdQuery: { userId } }] : []),
+          ],
+        },
+      );
+      grants.push(...(result ?? []).map(toGrant));
+      if ((result?.length ?? 0) < limit) return grants;
     }
+  }
+
+  async addGrant(userId: string, roleKeys: readonly string[]): Promise<void> {
+    await this.request('POST', `/management/v1/users/${enc(userId)}/grants`, {
+      projectId: this.config.projectId,
+      roleKeys,
+    });
+  }
+
+  async updateGrant(userId: string, grantId: string, roleKeys: readonly string[]): Promise<void> {
+    await this.request('PUT', `/management/v1/users/${enc(userId)}/grants/${enc(grantId)}`, {
+      roleKeys,
+    });
+  }
+
+  async deactivateGrant(userId: string, grantId: string): Promise<void> {
+    await this.request('POST', `/management/v1/users/${enc(userId)}/grants/${enc(grantId)}/_deactivate`, {});
+  }
+
+  async reactivateGrant(userId: string, grantId: string): Promise<void> {
+    await this.request('POST', `/management/v1/users/${enc(userId)}/grants/${enc(grantId)}/_reactivate`, {});
+  }
+
+  async removeGrant(userId: string, grantId: string): Promise<void> {
+    await this.request('DELETE', `/management/v1/users/${enc(userId)}/grants/${enc(grantId)}`);
   }
 
   /** Organizzazione degli utenti: configurata o quella del service account (in cache). */
   private organizationId(): Promise<string> {
-    if (this.config.zitadel.organizationId) return Promise.resolve(this.config.zitadel.organizationId);
+    if (this.config.organizationId) return Promise.resolve(this.config.organizationId);
     this.orgId ??= this.request<{ user: { details: { resourceOwner: string } } }>('GET', '/auth/v1/users/me')
       .then((me) => me.user.details.resourceOwner)
       .catch((error: unknown) => {
@@ -157,13 +195,20 @@ export class ZitadelService {
   }
 
   private async request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
+    if (!this.config.token) {
+      throw badGateway('Gestione utenti non configurata (manca ZITADEL_TOKEN)');
+    }
+    // le API v1 di gestione lavorano nel contesto di un'organizzazione
+    const orgHeader: Record<string, string> =
+      path.startsWith('/management/') ? { 'x-zitadel-orgid': await this.organizationId() } : {};
     let response: Response;
     try {
-      response = await fetch(`${this.config.zitadel.url}${path}`, {
+      response = await fetch(`${this.config.url}${path}`, {
         method,
         headers: {
-          Authorization: `Bearer ${this.config.zitadel.token}`,
+          Authorization: `Bearer ${this.config.token}`,
           Accept: 'application/json',
+          ...orgHeader,
           ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
         },
         body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -185,10 +230,29 @@ export class ZitadelService {
 
 const enc = encodeURIComponent;
 
-/** ZITADEL annida le opzioni in `{ publicKey: … }`: al browser serve l'oggetto interno. */
-function unwrapPublicKey(options: WebAuthnOptionsJson): WebAuthnOptionsJson {
-  const inner = options['publicKey'];
-  return inner && typeof inner === 'object' ? (inner as WebAuthnOptionsJson) : options;
+function toUser(json: UserJson): ZitadelUser {
+  const profile = json.human?.profile ?? {};
+  return {
+    userId: json.userId,
+    firstName: profile.givenName ?? '',
+    lastName: profile.familyName ?? '',
+    displayName: profile.displayName ?? '',
+    email: json.human?.email?.email ?? '',
+  };
+}
+
+function toGrant(json: GrantJson): ZitadelGrant {
+  return {
+    grantId: json.id,
+    userId: json.userId,
+    roleKeys: json.roleKeys ?? [],
+    active: json.state !== 'USER_GRANT_STATE_INACTIVE',
+    firstName: json.firstName ?? '',
+    lastName: json.lastName ?? '',
+    displayName: json.displayName ?? '',
+    email: json.email ?? '',
+    createdAt: json.details?.creationDate ?? new Date(0).toISOString(),
+  };
 }
 
 function parseError(body: string): { message?: string; id?: string } {
@@ -211,6 +275,9 @@ export function toHttpError(error: unknown): unknown {
   }
   if (error.status === 400 || error.status === 409) {
     return conflict(`ZITADEL ha rifiutato i dati: ${error.message}`);
+  }
+  if (error.status === 404) {
+    return conflict('Utente non trovato su ZITADEL');
   }
   return badGateway(`Errore del servizio di identità (${error.status})`);
 }

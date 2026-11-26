@@ -1,7 +1,8 @@
 /**
  * Permessi sulle funzioni di palio, `<sezione>.<azione>`. Per le sezioni gestionali `view`
  * (vedere) e `manage` (modificare, che comprende vedere); la chat ha solo `use`.
- * Etichette e raggruppamento li espone l'API (`GET /api/permissions`).
+ * Sono i ruoli del progetto Dimmelo su ZITADEL (stesse chiavi): un permesso nuovo va creato
+ * anche lì. Etichette e raggruppamento li espone l'API (`GET /api/permissions`).
  */
 export type Permission = 'chat.use' | 'users.view' | 'users.manage';
 
@@ -64,9 +65,8 @@ export function isPermission(value: unknown): value is Permission {
   return typeof value === 'string' && Object.hasOwn(DEFINITIONS, value);
 }
 
-/** Permessi effettivi: quelli assegnati più quelli che comprendono; tutti per l'amministratore. */
-export function effectivePermissions(isAdmin: boolean, granted: readonly string[]): Permission[] {
-  if (isAdmin) return [...ALL_PERMISSIONS];
+/** Permessi effettivi: quelli assegnati più quelli che comprendono (modificare → vedere). */
+export function effectivePermissions(granted: readonly string[]): Permission[] {
   const result = new Set<Permission>();
   const add = (permission: Permission) => {
     if (result.has(permission)) return;
@@ -79,9 +79,9 @@ export function effectivePermissions(isAdmin: boolean, granted: readonly string[
 
 /** `true` se l'utente ha tutti i permessi richiesti. */
 export function hasPermissions(
-  user: { is_admin: boolean; permissions: readonly string[] },
+  user: { permissions: readonly string[] },
   required: readonly Permission[],
 ): boolean {
-  const effective = effectivePermissions(user.is_admin, user.permissions);
+  const effective = effectivePermissions(user.permissions);
   return required.every((p) => effective.includes(p));
 }

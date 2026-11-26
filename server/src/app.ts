@@ -3,7 +3,6 @@ import express, { json } from 'express';
 import { AuthController } from './controllers/auth.controller.js';
 import { ChatController } from './controllers/chat.controller.js';
 import { HealthController } from './controllers/health.controller.js';
-import { InvitesController } from './controllers/invites.controller.js';
 import { UsersController } from './controllers/users.controller.js';
 import { Environment } from './environment.js';
 import { errorHandler } from './lib/http-error.js';
@@ -29,7 +28,6 @@ export class App {
     // Frontend e API sullo stesso origin (proxy in dev, nginx in prod): niente CORS.
     this.express.use('/api', new HealthController(this.env).router);
     this.express.use('/api/auth', new AuthController(this.env).router);
-    this.express.use('/api/invites', new InvitesController(this.env).router);
     this.express.use('/api', new UsersController(this.env).router);
     this.express.use('/api', new ChatController(this.env).router);
     this.express.use(errorHandler);

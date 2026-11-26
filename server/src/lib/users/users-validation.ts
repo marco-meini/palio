@@ -3,8 +3,6 @@ import type { UserInputDto } from '../auth/dto.js';
 import { isEmail } from '../auth/email.js';
 import { ALL_PERMISSIONS, isPermission } from '../auth/permissions.js';
 
-const PHONE = /^\+?[0-9][0-9 ./()-]{4,24}$/;
-
 function str(value: unknown): string {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
 }
@@ -17,8 +15,6 @@ export function parseUserInput(body: unknown): UserInputDto {
   const firstName = str(input['firstName']);
   const lastName = str(input['lastName']);
   const email = str(input['email']).toLowerCase();
-  const phone = str(input['phone']);
-  const isAdmin = input['isAdmin'] === true;
   const permissions = input['permissions'] ?? [];
 
   if (!firstName) errors['firstName'] = 'Il nome è obbligatorio';
@@ -27,9 +23,10 @@ export function parseUserInput(body: unknown): UserInputDto {
   else if (lastName.length > 50) errors['lastName'] = 'Massimo 50 caratteri';
   if (!email) errors['email'] = "L'email è obbligatoria";
   else if (!isEmail(email)) errors['email'] = 'Email non valida';
-  if (phone && !PHONE.test(phone)) errors['phone'] = 'Numero di telefono non valido';
   if (!Array.isArray(permissions) || !permissions.every(isPermission)) {
     errors['permissions'] = 'Permessi non validi';
+  } else if (permissions.length === 0) {
+    errors['permissions'] = 'Serve almeno un permesso';
   }
 
   if (Object.keys(errors).length > 0) {
@@ -39,8 +36,6 @@ export function parseUserInput(body: unknown): UserInputDto {
     firstName,
     lastName,
     email,
-    phone: phone || null,
-    isAdmin,
     permissions: ALL_PERMISSIONS.filter((p) => (permissions as unknown[]).includes(p)),
   };
 }

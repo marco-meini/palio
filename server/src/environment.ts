@@ -15,7 +15,7 @@ export class Environment {
   pgConnection!: PgClientManager;
   chatPgConnection!: PgClientManager;
   pgModels!: PgModels;
-  /** Login con passkey, sessioni, utenti (solo API). */
+  /** Login OIDC con ZITADEL, sessioni, utenti (solo API). */
   auth!: AuthServices;
 
   async init(): Promise<void> {

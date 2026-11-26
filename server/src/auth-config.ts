@@ -1,7 +1,9 @@
 /**
- * Configurazione dell'autenticazione (passkey su ZITADEL, sessioni, email), dalle variabili
- * d'ambiente. Serve solo all'API: scraper, MCP e task non la caricano.
+ * Configurazione dell'autenticazione (OIDC con ZITADEL, sessioni), dalle variabili d'ambiente.
+ * Serve solo all'API: scraper, MCP e task non la caricano.
  */
+
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 function required(name: string): string {
   const value = process.env[name];
@@ -21,42 +23,25 @@ function int(name: string, fallback: number): number {
   return value;
 }
 
-/** Provider di identità ZITADEL: API v2 con il token di un service account. */
+/** ZITADEL: issuer OIDC e API di gestione (con il token di un service account). */
 export interface ZitadelConfig {
-  /** URL pubblico di ZITADEL (es. https://id.example.com), senza slash finale. */
+  /** URL pubblico di ZITADEL (es. https://id.example.com), senza slash finale: è l'issuer. */
   url: string;
-  /** Personal Access Token del service account di palio (solo backend). */
-  token: string;
+  /** Progetto di Dimmelo: i suoi ruoli sono i permessi dell'app. */
+  projectId: string;
+  /**
+   * Personal Access Token del service account di palio (solo backend), per la pagina Utenti.
+   * Facoltativo: senza, il login funziona ma la gestione utenti risponde 502.
+   */
+  token: string | undefined;
   /** Organizzazione in cui creare gli utenti; se assente, quella del service account. */
   organizationId: string | undefined;
 }
 
-export interface PasskeyConfig {
-  /**
-   * Dominio delle passkey (RP ID). Le app che condividono le passkey usano lo stesso dominio
-   * padre (es. `example.com` per `casa.example.com` e `palio.example.com`).
-   */
-  rpId: string;
-}
-
-/** Link d'accesso monouso inviati da palio. */
-export interface AccessLinkConfig {
-  /** Durata dei link d'invito, in ore. */
-  inviteTtlHours: number;
-  /** Durata dei link di recupero accesso inviati per email, in minuti. */
-  recoveryTtlMinutes: number;
-}
-
-/** Server SMTP per le email dell'app (recupero accesso). */
-export interface MailConfig {
-  host: string;
-  port: number;
-  /** TLS diretto (porta 465); altrimenti STARTTLS se il server lo offre. */
-  secure: boolean;
-  user: string | undefined;
-  password: string | undefined;
-  /** Mittente, es. `Dimmelo <dimmelo@example.com>`. */
-  from: string;
+/** Applicazione web di Dimmelo su ZITADEL (tipo Web, autenticazione Basic). */
+export interface OidcClientConfig {
+  clientId: string;
+  clientSecret: string;
 }
 
 export interface AuthConfig {
@@ -64,13 +49,10 @@ export interface AuthConfig {
   appUrl: string;
   /** `true` se l'app è servita in HTTPS: i cookie vengono marcati Secure. */
   secureCookies: boolean;
-  /** Segreto per firmare (HMAC) il cookie temporaneo del login con passkey. */
+  /** Segreto per firmare lo stato del login e cifrare i refresh token. */
   cookieSecret: string;
   zitadel: ZitadelConfig;
-  passkey: PasskeyConfig;
-  accessLinks: AccessLinkConfig;
-  /** Assente se SMTP_HOST non è impostato: le email non vengono inviate. */
-  mail: MailConfig | undefined;
+  oidc: OidcClientConfig;
   session: {
     /** Durata massima della sessione, in giorni. */
     ttlDays: number;
@@ -85,53 +67,28 @@ export function loadAuthConfig(): AuthConfig {
   if (cookieSecret.length < 32) {
     throw new Error('COOKIE_SECRET deve essere lungo almeno 32 caratteri');
   }
+  const zitadelUrl = required('ZITADEL_URL').replace(/\/+$/, '');
+  const url = new URL(zitadelUrl);
+  if (url.protocol === 'http:' && !LOCAL_HOSTS.has(url.hostname)) {
+    throw new Error('ZITADEL_URL deve usare https (http è ammesso solo su localhost)');
+  }
   return {
     appUrl,
     secureCookies: appUrl.startsWith('https://'),
     cookieSecret,
     zitadel: {
-      url: required('ZITADEL_URL').replace(/\/+$/, ''),
-      token: required('ZITADEL_TOKEN'),
+      url: zitadelUrl,
+      projectId: required('ZITADEL_PROJECT_ID'),
+      token: process.env['ZITADEL_TOKEN'] || undefined,
       organizationId: process.env['ZITADEL_ORG_ID'] || undefined,
     },
-    passkey: { rpId: passkeyRpId(appUrl) },
-    accessLinks: {
-      inviteTtlHours: Math.min(Math.max(int('INVITE_TTL_HOURS', 72), 1), 24 * 31),
-      recoveryTtlMinutes: Math.min(Math.max(int('RECOVERY_TTL_MINUTES', 60), 5), 1440),
+    oidc: {
+      clientId: required('OIDC_CLIENT_ID'),
+      clientSecret: required('OIDC_CLIENT_SECRET'),
     },
-    mail: loadMail(),
     session: {
       ttlDays: int('SESSION_TTL_DAYS', 30),
       idleDays: int('SESSION_IDLE_DAYS', 7),
     },
-  };
-}
-
-/**
- * RP ID delle passkey: `PASSKEY_RP_ID`, oppure l'host di APP_URL. Deve coincidere con l'host
- * dell'app o esserne un dominio padre, altrimenti il browser rifiuta le passkey.
- */
-export function passkeyRpId(appUrl: string, value = process.env['PASSKEY_RP_ID']): string {
-  const host = new URL(appUrl).hostname;
-  const rpId = (value || host).toLowerCase().replace(/^\.+|\.+$/g, '');
-  if (host !== rpId && !host.endsWith(`.${rpId}`)) {
-    throw new Error(
-      `PASSKEY_RP_ID (${rpId}) deve essere l'host di APP_URL (${host}) o un suo dominio padre`,
-    );
-  }
-  return rpId;
-}
-
-function loadMail(): MailConfig | undefined {
-  const host = process.env['SMTP_HOST'];
-  if (!host) return undefined;
-  const port = int('SMTP_PORT', 587);
-  return {
-    host,
-    port,
-    secure: process.env['SMTP_SECURE'] ? process.env['SMTP_SECURE'] === 'true' : port === 465,
-    user: process.env['SMTP_USER'] || undefined,
-    password: process.env['SMTP_PASSWORD'] || undefined,
-    from: required('SMTP_FROM'),
   };
 }

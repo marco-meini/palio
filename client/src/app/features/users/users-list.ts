@@ -85,9 +85,6 @@ const STATUS_CLASSES: Record<UserStatus, string> = {
                   </div>
                   <div class="mt-0.5 truncate text-sm text-stone-600">
                     {{ user.email }}
-                    @if (user.phone) {
-                      · {{ user.phone }}
-                    }
                   </div>
                   <div class="text-xs text-stone-400">
                     @if (user.lastLoginAt) {
@@ -183,7 +180,8 @@ const STATUS_CLASSES: Record<UserStatus, string> = {
               più entrare in Dimmelo: si perdono i suoi permessi e le sessioni aperte.
             </p>
             <p>
-              Il suo account di accesso e le passkey restano, perché li usano anche le altre app.
+              Il suo account di accesso e le passkey restano, perché possono servire alle altre
+              app.
             </p>
             <p class="text-stone-500">
               Non si può annullare. Se deve solo smettere di entrare per un po', usa
@@ -214,7 +212,7 @@ export class UsersList {
   protected readonly statusClasses = STATUS_CLASSES;
 
   protected readonly invite = signal<{ invite: InviteDto; name: string } | null>(null);
-  protected readonly confirming = signal<number | null>(null);
+  protected readonly confirming = signal<string | null>(null);
   /** Utente da eliminare, in attesa di conferma nella modale. */
   protected readonly deleting = signal<UserDto | null>(null);
   protected readonly deleteError = signal<string | null>(null);
@@ -223,13 +221,16 @@ export class UsersList {
 
   protected readonly canManage = computed(() => this.auth.can('users.manage'));
 
-  /** Gli amministratori li gestisce solo un amministratore (il backend controlla anche il resto). */
+  /**
+   * Si gestisce solo chi ha permessi che si hanno anche (il backend controlla anche il resto).
+   * I permessi assegnati e quelli dell'utente corrente sono già confrontabili: modificare
+   * comprende vedere, e l'utente corrente ha anche quelli impliciti.
+   */
   protected canManageUser(user: UserDto): boolean {
-    return this.canManage() && (!user.isAdmin || this.auth.isAdmin());
+    return this.canManage() && user.permissions.every((p) => this.auth.can(p));
   }
 
   protected permissionSummary(user: UserDto): string {
-    if (user.isAdmin) return 'Amministratore';
     const n = user.permissions.length;
     return n === 0 ? 'Nessun permesso' : n === 1 ? '1 permesso' : `${n} permessi`;
   }

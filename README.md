@@ -30,10 +30,11 @@ Variabili principali (elenco completo in [`.env.example`](.env.example)):
 | `DATABASE_URL` | `postgresql://...@127.0.0.1:5432/palio` | Pool API / scraper / auth |
 | `CHAT_DATABASE_URL` | (opzionale) | Pool read-only chat (`palio_chat_ro`) |
 | `ANTHROPIC_API_KEY` | `sk-ant-...` | Obbligatoria per la chat |
-| `APP_URL` | `http://localhost:4200` | URL pubblico del frontend (origin ammesso, link d'invito) |
-| `COOKIE_SECRET` | `openssl rand -base64 48` | Firma del cookie di login (≥ 32 caratteri) |
-| `ZITADEL_URL` / `ZITADEL_TOKEN` | `http://localhost:8081` / PAT | Provider di identità e token del service account di palio |
-| `SMTP_*` | (vuoto) | Email di recupero accesso; senza, in dev il link finisce nel log |
+| `APP_URL` | `http://localhost:4200` | URL pubblico del frontend (origin ammesso, redirect OIDC) |
+| `COOKIE_SECRET` | `openssl rand -base64 48` | Firma dello stato del login e cifratura dei refresh token (≥ 32 caratteri) |
+| `ZITADEL_URL` / `ZITADEL_PROJECT_ID` | `https://id.marcomeini.it` / id | Issuer OIDC e progetto Dimmelo (i suoi ruoli sono i permessi) |
+| `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | dall'app `dimmelo-web` | Client OIDC (solo backend) |
+| `ZITADEL_TOKEN` | PAT | Service account per la pagina Utenti (inviti e ruoli) |
 | `SERVER_PORT` | `3001` | Porta API |
 
 Produzione: stesse chiavi in `.env.production` (vedi [`.env.production.example`](.env.production.example)).
@@ -74,65 +75,71 @@ npm run build       # tsc del server + build Angular
 
 Sono gli stessi controlli della CI (vedi [CI e rilascio in produzione](#ci-e-rilascio-in-produzione)).
 
-### Autenticazione (passkey e ZITADEL)
+### Autenticazione (OIDC con ZITADEL)
 
-Stesso metodo di dimora, con utenti e tabelle propri di palio (`app_user`, `user_permission`,
-`user_session` nel DB `palio`). Si entra con una **passkey** (Face ID, Touch ID, chiavetta),
-sempre nelle pagine di Dimmelo: email, poi «Accedi con passkey». Le identità stanno su
-**ZITADEL** (`https://id.marcomeini.it`, lo stesso di dimora), usato in modo *headless*: palio
-chiede a ZITADEL la challenge, il browser la firma con la passkey e ZITADEL verifica la firma.
-Poi palio apre la propria sessione server-side e il browser riceve solo un cookie httpOnly
-(`palio_sid`). L'utente non vede mai ZITADEL.
+Il login è **OIDC** (authorization code + PKCE, client confidenziale) verso **ZITADEL**
+(`https://id.marcomeini.it`, lo stesso di dimora). «Accedi» porta alla pagina di login di
+ZITADEL, dove si entra con una **passkey** (registrata su `id.marcomeini.it`, quindi valida per
+tutte le app) o con **Google**. Al ritorno (`/api/auth/callback`) il backend verifica i token,
+apre la propria sessione server-side e il browser riceve solo un cookie httpOnly (`palio_sid`):
+i token restano sul server (refresh token cifrato in DB). «Esci» chiude la sessione di palio e
+quella di ZITADEL.
 
-**Gli utenti si gestiscono da Dimmelo**, pagina *Utenti*: anagrafica, contatti, permessi,
-invito, disattivazione, eliminazione.
-
-- **Invito.** Creando un utente, palio genera un **link d'accesso** monouso (`/invito/…`). Chi
-  lo apre preme *Crea la passkey* ed entra subito. Alla prima apertura palio collega l'account
-  ZITADEL con la stessa email, se esiste già (identità condivisa con dimora); altrimenti lo crea.
-  Ogni utente ha al più un link valido; in DB c'è solo l'hash.
-- **Recupero in autonomia.** *Non riesci ad accedere?*: chi è censito e attivo riceve per email
-  un link dello stesso tipo, valido `RECOVERY_TTL_MINUTES` (60 minuti). La risposta è sempre la
-  stessa (non si scopre quali email sono registrate) e le richieste sono limitate per IP e per
-  indirizzo. Serve SMTP (`SMTP_*`); senza, in sviluppo il testo dell'email finisce nel log dell'API.
-- **Disattivazione.** Chiude subito le sessioni e annulla il link d'accesso. L'account ZITADEL
-  resta, perché serve anche a dimora.
-- **Eliminazione.** Toglie l'utente da palio con permessi e sessioni; l'account ZITADEL e le
-  passkey restano. Non si può eliminare sé stessi né l'ultimo amministratore attivo.
-- **Dominio delle passkey** (`PASSKEY_RP_ID`): di default l'host di `APP_URL`
-  (`dimmelo.marcomeini.it`). Le passkey di palio sono quindi distinte da quelle di dimora: ognuno
-  ne crea una anche per palio, con lo stesso account ZITADEL.
-
-**Permessi.** Ogni utente ha permessi singoli, assegnati dalla pagina *Utenti*:
+**Permessi = ruoli del progetto Dimmelo su ZITADEL** (stesse chiavi):
 
 - `chat.use` — usare la chat Dimmelo;
 - `users.view` — vedere gli utenti; `users.manage` — gestirli (comprende vedere).
 
-Il flag *Amministratore* dà tutti i permessi, anche quelli delle funzioni future. Chi gestisce
-gli utenti senza essere amministratore assegna solo i permessi che ha anche lui e non tocca gli
-amministratori; nessuno cambia i propri permessi e resta sempre almeno un amministratore.
-Entra solo chi è censito in palio ed è attivo. Ogni endpoint dichiara cosa serve
-(`guard.public()`, `guard.anyUser()`, `guard.require(...)`); le richieste non-GET devono avere
-`Origin` uguale ad `APP_URL` (protezione CSRF).
+Il progetto ha *Only authorized users can authenticate*: entra solo chi ha almeno un ruolo. I
+ruoli arrivano nell'ID token; ogni 5 minuti il backend li rilegge con il refresh token, così un
+ruolo tolto o un accesso disattivato valgono anche per le sessioni già aperte (se ZITADEL rifiuta
+il refresh, la sessione si chiude). Ogni endpoint dichiara cosa serve (`guard.public()`,
+`guard.anyUser()`, `guard.require(...)`); le richieste non-GET devono avere `Origin` uguale ad
+`APP_URL` (protezione CSRF).
 
-**Utenti di partenza.** La migrazione `0003_auth.sql` crea gli utenti da quelli di
-`dimmelo_users` (il più vecchio è amministratore, tutti hanno `chat.use`). Nessuno ha ancora
-l'account ZITADEL collegato: al primo accesso ognuno usa *Non riesci ad accedere?* (serve SMTP)
-o un invito creato da un amministratore.
+**Gli utenti si gestiscono da Dimmelo**, pagina *Utenti* (oppure dalla console di ZITADEL,
+*Role Assignments* del progetto): la pagina lavora sugli accessi al progetto (*user grant*) con
+il service account di palio.
 
-#### Configurazione (una volta)
+- **Nuovo utente.** Collega l'account ZITADEL con la stessa email (es. già usato per dimora) o
+  lo crea con email verificata, assegna i ruoli e genera un **link per creare la passkey** sulla
+  pagina di ZITADEL, da mandare all'utente (monouso, scade presto: se serve se ne genera un altro
+  con *Invito*). Se l'utente usa Google con la stessa email può entrare direttamente con Google
+  (collegamento automatico per email).
+- **Modifica.** Nome ed email cambiano sull'account ZITADEL, quindi anche nelle altre app; i
+  permessi sul ruolo del progetto.
+- **Disattivazione.** Sospende l'accesso a Dimmelo (i ruoli restano) e chiude le sessioni.
+- **Eliminazione.** Toglie l'accesso a Dimmelo; l'account ZITADEL e le passkey restano.
 
-1. **Service account di palio su ZITADEL.** Nella console (`<ZITADEL_URL>/ui/console`, utente
-   admin) crea un service user con username `palio`; tra i *Managers* dell'istanza
-   assegnagli lo stesso ruolo del service account `dimora` (`IAM_OWNER`); infine, nella sua
-   scheda, crea un *Personal Access Token* senza scadenza. Il token va in `ZITADEL_TOKEN`: ha poteri da amministratore, resta solo nel backend.
-   Un account a parte (invece del token di dimora) si può revocare senza toccare dimora.
-2. **`.env` / `.env.production`:** `APP_URL`, `COOKIE_SECRET` (`openssl rand -base64 48`),
-   `ZITADEL_URL`, `ZITADEL_TOKEN`, eventualmente `ZITADEL_ORG_ID`, e gli `SMTP_*` (gli stessi
-   di dimora, con `SMTP_FROM` di Dimmelo).
-3. **Sviluppo:** serve un ZITADEL in esecuzione, come per dimora: quello locale di dimora
-   (`infra/zitadel`, `http://localhost:8081`) con un service account `palio` creato come al punto 1.
-   `APP_URL=http://localhost:4200` (le passkey valgono per `localhost`).
+Si gestiscono solo utenti con permessi che si hanno anche e si assegnano solo i propri; nessuno
+cambia i propri permessi né disattiva o elimina sé stesso, e resta sempre almeno un utente
+attivo con `users.manage`.
+
+**Utenti di partenza.** Quelli della vecchia allowlist `dimmelo_users` si portano su ZITADEL
+(account collegato o creato, ruolo `chat.use`) con:
+
+```bash
+cd server && npm run import:dimmelo-users -- --dry-run   # cosa farebbe
+cd server && npm run import:dimmelo-users                # lo fa (scrive su ZITADEL)
+```
+
+#### Configurazione su ZITADEL (una volta)
+
+1. **Progetto `Dimmelo`** con i ruoli `chat.use`, `users.view`, `users.manage` e le opzioni
+   *Return user roles during authentication* e *Only authorized users can authenticate*. Il suo
+   id va in `ZITADEL_PROJECT_ID`.
+2. **Applicazione `dimmelo-web`** nel progetto: tipo *Web*, autenticazione *Basic*, grant
+   *Authorization Code* e *Refresh Token*; redirect `https://dimmelo.marcomeini.it/api/auth/callback`
+   e `http://localhost:4200/api/auth/callback` (con *Development Mode* per `http`), post logout
+   `…/uscito`; nei token *User roles inside ID Token* e *User Info inside ID Token*. Client id e
+   secret in `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET`.
+3. **Service account** per la pagina Utenti (`palio`, e in locale `palio-dev`): tra i *Managers*
+   dell'istanza con ruolo `IAM_OWNER`, come `dimora`; un *Personal Access Token* nella sua
+   scheda va in `ZITADEL_TOKEN` (solo backend). Senza token il login funziona, la pagina Utenti no.
+4. **Ruoli** agli utenti: dalla pagina Utenti o da *Role Assignments* del progetto.
+
+In sviluppo si usa lo stesso ZITADEL di produzione: `APP_URL=http://localhost:4200` (redirect
+già registrato nell'applicazione).
 
 #### Deploy produzione (Docker + Caddy)
 
@@ -144,7 +151,7 @@ Produzione prevista su **`https://dimmelo.marcomeini.it`** (Caddy sul VPS, conta
    ```bash
    cp .env.production.example .env.production
    # DATABASE_URL=postgresql://postgres:PASSWORD@postgres:5432/palio
-   # ANTHROPIC_API_KEY, APP_URL, COOKIE_SECRET, ZITADEL_URL/ZITADEL_TOKEN, SMTP_* (vedi Autenticazione)
+   # ANTHROPIC_API_KEY, APP_URL, COOKIE_SECRET, ZITADEL_*, OIDC_CLIENT_* (vedi Autenticazione)
    ```
 2. Abilita pgvector e crea la tabella regolamento (una tantum), poi indicizza il PDF:
    ```bash
@@ -174,12 +181,10 @@ Route di autenticazione e utenti:
 
 | Metodo | Path | Accesso | Descrizione |
 |--------|------|---------|-------------|
-| POST | `/api/auth/passkey/start` | pubblico | Challenge per l'email indicata |
-| POST | `/api/auth/passkey/finish` | pubblico | Verifica la passkey e apre la sessione |
-| POST | `/api/auth/logout` | pubblico | Chiude la sessione su questo dispositivo |
+| GET | `/api/auth/login?returnTo=` | pubblico | Redirect alla pagina di login di ZITADEL |
+| GET | `/api/auth/callback` | pubblico (state firmato) | Ritorno da ZITADEL: apre la sessione |
+| POST | `/api/auth/logout` | pubblico | Chiude la sessione; risponde con l'URL di uscita da ZITADEL |
 | GET | `/api/auth/me` | utente | Utente corrente e permessi effettivi |
-| POST | `/api/auth/recovery` | pubblico | Link di recupero via email (sempre 202) |
-| GET/POST | `/api/invites/:token[/passkey/start\|finish]` | pubblico (token) | Link d'accesso: crea la passkey ed entra |
 | GET | `/api/users`, `/api/users/:id`, `/api/permissions` | `users.view` | Elenco, scheda, catalogo permessi |
 | POST/PUT/DELETE | `/api/users[/:id[/invite\|disable\|enable]]` | `users.manage` | Gestione utenti |
 | POST | `/api/chat` | `chat.use` | Chat |
@@ -507,4 +512,4 @@ Per aggiungere componenti [Spartan-ng](https://www.spartan.ng) in seguito: `cd c
 
 La chat non può eseguire `INSERT`, `UPDATE`, `DELETE`, DDL o migration: solo `SELECT` / `WITH` / `EXPLAIN`.
 
-Solo gli utenti censiti e attivi con il permesso `chat.use` possono usare la chat (passkey via ZITADEL, sessione server-side in cookie httpOnly; nessun token nel browser). Le tabelle di autenticazione non sono leggibili dal ruolo della chat (`palio_chat_ro`). In produzione usa sempre HTTPS.
+Solo gli utenti con il ruolo `chat.use` sul progetto Dimmelo di ZITADEL possono usare la chat (login OIDC, sessione server-side in cookie httpOnly; nessun token nel browser). Le tabelle di autenticazione non sono leggibili dal ruolo della chat (`palio_chat_ro`). In produzione usa sempre HTTPS.

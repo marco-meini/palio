@@ -10,7 +10,7 @@ import type {
   UserDto,
 } from '../../core/auth/dto';
 
-/** Censimento utenti e permessi (`users.view` / `users.manage`). */
+/** Utenti con accesso a Dimmelo e loro permessi (`users.view` / `users.manage`). */
 @Injectable({ providedIn: 'root' })
 export class UsersApi {
   private readonly http = inject(HttpClient);
@@ -19,7 +19,7 @@ export class UsersApi {
     return httpResource<UserDto[]>(() => '/api/users');
   }
 
-  get(id: number): Promise<UserDto> {
+  get(id: string): Promise<UserDto> {
     return firstValueFrom(this.http.get<UserDto>(`/api/users/${id}`));
   }
 
@@ -27,23 +27,23 @@ export class UsersApi {
     return firstValueFrom(this.http.post<CreateUserResponseDto>('/api/users', user));
   }
 
-  update(id: number, user: UpdateUserDto): Promise<UserDto> {
+  update(id: string, user: UpdateUserDto): Promise<UserDto> {
     return firstValueFrom(this.http.put<UserDto>(`/api/users/${id}`, user));
   }
 
-  invite(id: number): Promise<InviteDto> {
+  invite(id: string): Promise<InviteDto> {
     return firstValueFrom(this.http.post<InviteDto>(`/api/users/${id}/invite`, null));
   }
 
-  disable(id: number): Promise<UserDto> {
+  disable(id: string): Promise<UserDto> {
     return firstValueFrom(this.http.post<UserDto>(`/api/users/${id}/disable`, null));
   }
 
-  remove(id: number): Promise<void> {
+  remove(id: string): Promise<void> {
     return firstValueFrom(this.http.delete<void>(`/api/users/${id}`));
   }
 
-  enable(id: number): Promise<UserDto> {
+  enable(id: string): Promise<UserDto> {
     return firstValueFrom(this.http.post<UserDto>(`/api/users/${id}/enable`, null));
   }
 

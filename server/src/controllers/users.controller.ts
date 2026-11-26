@@ -6,15 +6,16 @@ import { PERMISSION_CATALOG } from '../lib/auth/permissions.js';
 import { badRequest } from '../lib/http-error.js';
 import { parseUserInput } from '../lib/users/users-validation.js';
 
-function idParam(req: Request): number {
-  const id = Number(req.params['id']);
-  if (!Number.isSafeInteger(id) || id <= 0) throw badRequest('Id non valido');
+/** Id dell'utente su ZITADEL (numerico, in forma di stringa). */
+function idParam(req: Request): string {
+  const id = String(req.params['id'] ?? '');
+  if (!/^\d{1,30}$/.test(id)) throw badRequest('Id non valido');
   return id;
 }
 
 /**
- * Censimento utenti (`/api/users`): vedere con `users.view`, il resto con `users.manage`.
- * Catalogo dei permessi su `/api/permissions`.
+ * Utenti con accesso a Dimmelo (`/api/users`, accessi al progetto su ZITADEL): vedere con
+ * `users.view`, il resto con `users.manage`. Catalogo dei permessi su `/api/permissions`.
  */
 export class UsersController extends Abstract_Controller {
   constructor(env: Environment) {

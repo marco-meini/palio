@@ -95,14 +95,10 @@ const FIELD =
                   <span class="mt-1 block text-xs text-red-600">{{ e }}</span>
                 }
               </label>
-              <label class="block text-sm font-medium text-stone-700">
-                Telefono <span class="font-normal text-stone-400">(facoltativo)</span>
-                <input type="tel" formControlName="phone" autocomplete="tel" [class]="field" />
-                @if (fieldError('phone'); as e) {
-                  <span class="mt-1 block text-xs text-red-600">{{ e }}</span>
-                }
-              </label>
             </div>
+            <p class="mt-2 text-xs text-stone-500">
+              Nome ed email sono quelli dell'account di accesso: cambiano anche nelle altre app.
+            </p>
           </fieldset>
 
           <fieldset>
@@ -110,11 +106,9 @@ const FIELD =
             <div class="mt-2">
               <app-permission-picker
                 [catalog]="catalog()"
-                [(isAdmin)]="isAdmin"
                 [(permissions)]="permissions"
                 [disabled]="readonly() || isSelf()"
-                [canSetAdmin]="auth.isAdmin()"
-                [assignableBy]="auth.isAdmin() ? null : (auth.user()?.permissions ?? [])"
+                [assignableBy]="auth.user()?.permissions ?? []"
               />
             </div>
             @if (isSelf()) {
@@ -161,9 +155,7 @@ export class UserForm {
     firstName: ['', [Validators.required, Validators.maxLength(50)]],
     lastName: ['', [Validators.required, Validators.maxLength(50)]],
     email: ['', [Validators.required, Validators.email]],
-    phone: [''],
   });
-  protected readonly isAdmin = signal(false);
   protected readonly permissions = signal<Permission[]>([]);
   protected readonly catalog = signal<PermissionSectionDto[]>([]);
 
@@ -180,14 +172,14 @@ export class UserForm {
     );
     effect(() => {
       const id = this.id();
-      if (id) void this.load(Number(id));
+      if (id) void this.load(id);
     });
   }
 
   protected fieldError(name: keyof UserInputDto): string | null {
     const server = this.serverErrors()[name];
     if (server) return server;
-    if (name === 'isAdmin' || name === 'permissions') return null;
+    if (name === 'permissions') return null;
     const control = this.form.controls[name];
     if (!control.touched || control.valid) return null;
     if (control.hasError('required')) return 'Campo obbligatorio';
@@ -202,19 +194,13 @@ export class UserForm {
       this.form.markAllAsTouched();
       return;
     }
-    const value = this.form.getRawValue();
-    const body: UserInputDto = {
-      ...value,
-      phone: value.phone.trim() || null,
-      isAdmin: this.isAdmin(),
-      permissions: this.permissions(),
-    };
+    const body: UserInputDto = { ...this.form.getRawValue(), permissions: this.permissions() };
     this.saving.set(true);
     this.error.set(null);
     try {
       const id = this.id();
       if (id) {
-        await this.api.update(Number(id), body);
+        await this.api.update(id, body);
         await this.router.navigateByUrl('/utenti');
       } else {
         this.created.set(await this.api.create(body));
@@ -231,20 +217,17 @@ export class UserForm {
   protected reset(): void {
     this.created.set(null);
     this.form.reset();
-    this.isAdmin.set(false);
     this.permissions.set([]);
   }
 
-  private async load(id: number): Promise<void> {
+  private async load(id: string): Promise<void> {
     try {
       const user = await this.api.get(id);
       this.form.setValue({
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        phone: user.phone ?? '',
       });
-      this.isAdmin.set(user.isAdmin);
       this.permissions.set(user.permissions);
       this.isSelf.set(user.id === this.auth.user()?.id);
       if (this.readonly()) this.form.disable();

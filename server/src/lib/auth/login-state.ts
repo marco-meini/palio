@@ -1,16 +1,24 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
-/** Login con passkey in corso, conservato nel cookie temporaneo tra `start` e `finish`. */
+/**
+ * Login OIDC in corso, conservato nel cookie temporaneo tra `/login` e `/callback`.
+ * Firmato: non si può falsificare; non contiene segreti verso terzi (il code verifier serve
+ * solo insieme al codice che ZITADEL rimanda a questo browser).
+ */
 export interface LoginState {
-  /** Sessione ZITADEL con la challenge WebAuthn. */
-  sessionId: string;
-  /** Utente di palio che sta entrando. */
-  userId: number;
+  /** Parametro `state` (anti-CSRF del redirect). */
+  state: string;
+  /** Parametro `nonce` (lega l'ID token a questo login). */
+  nonce: string;
+  /** PKCE code verifier. */
+  codeVerifier: string;
+  /** Path interno a cui tornare dopo l'accesso. */
+  returnTo: string;
   /** Scadenza (epoch ms). */
   expiresAt: number;
 }
 
-export const LOGIN_STATE_TTL_MS = 5 * 60 * 1000;
+export const LOGIN_STATE_TTL_MS = 10 * 60 * 1000;
 
 // Prefisso di dominio: una firma valida per altri usi non vale qui.
 function sign(payload: string, secret: string): string {
@@ -36,10 +44,23 @@ export function decodeLoginState(
   if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) return null;
   try {
     const state = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as LoginState;
-    if (typeof state.sessionId !== 'string' || !Number.isInteger(state.userId)) return null;
+    for (const key of ['state', 'nonce', 'codeVerifier', 'returnTo'] as const) {
+      if (typeof state[key] !== 'string') return null;
+    }
     if (typeof state.expiresAt !== 'number' || state.expiresAt < now) return null;
     return state;
   } catch {
     return null;
   }
+}
+
+/** Solo path interni (anti open-redirect): altrimenti la home. */
+export function safeReturnTo(value: unknown): string {
+  return typeof value === 'string' &&
+    value.startsWith('/') &&
+    !value.startsWith('//') &&
+    !value.startsWith('/\\') &&
+    value.length <= 500
+    ? value
+    : '/';
 }

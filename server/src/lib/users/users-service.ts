@@ -1,190 +1,198 @@
-import type { Db } from '../db.js';
-import { type IUserWithPermissionsRow, ModelUsers } from '../../model/users.model.js';
+import type { ModelUsers } from '../../model/users.model.js';
 import type { AuthUser } from '../auth/auth-types.js';
 import type { CreateUserResponseDto, InviteDto, UserDto, UserInputDto } from '../auth/dto.js';
 import { effectivePermissions } from '../auth/permissions.js';
 import { conflict, forbidden, notFound } from '../http-error.js';
-import type { AccountsService } from './accounts-service.js';
-import type { InvitesService } from './invites-service.js';
+import { toHttpError, type ZitadelGrant, type ZitadelService } from '../zitadel.js';
 import { toUserDto } from './users-mapper.js';
 import { fullName } from './users-validation.js';
 
 /**
- * Censimento utenti: palio è la fonte di verità (anagrafica, contatti, permessi, stato).
- * L'identità su ZITADEL si collega o si crea quando l'utente apre il link d'accesso
- * (vedi `AccountsService`); chi entra in palio e cosa può fare lo decide sempre palio.
+ * Utenti di Dimmelo: chi ha accesso al progetto Dimmelo su ZITADEL (user grant) e con quali
+ * ruoli. ZITADEL è la fonte di verità; palio aggiunge solo l'ultimo accesso. Le identità sono
+ * condivise con le altre app: togliere l'accesso a Dimmelo non tocca l'account.
  *
- * Regole per chi gestisce gli utenti senza essere amministratore: non tocca gli
- * amministratori né chi ha permessi che lui non ha (cambiandogli l'email e mandando un invito
- * ne prenderebbe il posto), e assegna solo permessi che ha anche lui. Nessuno cambia i
- * propri permessi; deve restare almeno un amministratore attivo.
+ * Regole: si gestiscono solo utenti con permessi che si hanno anche (cambiandogli l'email e
+ * mandando un invito se ne prenderebbe il posto), si assegnano solo permessi propri, nessuno
+ * cambia i propri permessi e deve restare almeno un utente attivo che gestisce gli utenti.
  */
 export class UsersService {
-  private readonly repository: ModelUsers;
-
-  /** `models` crea il model sulla connessione data (anche quella di una transazione). */
   constructor(
-    private readonly db: Db,
-    private readonly accounts: AccountsService,
-    private readonly invites: InvitesService,
-    private readonly models: (db: Db) => ModelUsers = (d) => new ModelUsers(d),
-  ) {
-    this.repository = models(db);
-  }
+    private readonly zitadel: ZitadelService,
+    private readonly repository: ModelUsers,
+  ) {}
 
   async list(): Promise<UserDto[]> {
-    return (await this.repository.list()).map(toUserDto);
+    const grants = await this.call(() => this.zitadel.listGrants());
+    const logins = await this.repository.lastLogins(grants.map((g) => g.userId));
+    return grants
+      .map((g) => toUserDto(g, logins.get(g.userId)))
+      .sort(
+        (a, b) =>
+          Number(a.status === 'disabled') - Number(b.status === 'disabled') ||
+          a.lastName.localeCompare(b.lastName, 'it', { sensitivity: 'base' }) ||
+          a.firstName.localeCompare(b.firstName, 'it', { sensitivity: 'base' }),
+      );
   }
 
-  async get(id: number): Promise<UserDto> {
-    return toUserDto(await this.find(id));
+  async get(id: string): Promise<UserDto> {
+    return this.dto(await this.find(id));
   }
 
+  /**
+   * Dà accesso a Dimmelo: collega l'account ZITADEL con quella email (es. già usato in
+   * un'altra app) o lo crea, assegna i ruoli e prepara il link per la passkey.
+   */
   async create(input: UserInputDto, actor: AuthUser): Promise<CreateUserResponseDto> {
-    this.checkAssignment(actor, input);
-    if (await this.repository.findByEmail(input.email)) {
-      throw conflict('Esiste già un utente con questa email');
-    }
-    const user = await this.db.transaction(async (tx) => {
-      const users = this.models(tx);
-      const row = await users.insert({
-        first_name: input.firstName,
-        last_name: input.lastName,
-        display_name: fullName(input.firstName, input.lastName),
-        email: input.email,
-        phone: input.phone,
-        is_admin: input.isAdmin,
-        created_by: actor.id,
-      });
-      await users.setPermissions(row.id, input.permissions);
-      return { ...row, permissions: input.permissions };
+    this.checkAssignment(actor, input.permissions);
+    return this.call(async () => {
+      const existing = await this.zitadel.findUserByEmail(input.email);
+      if (existing && (await this.zitadel.listGrants(existing.userId)).length > 0) {
+        throw conflict('Questa persona ha già accesso a Dimmelo');
+      }
+      const userId =
+        existing?.userId ??
+        (await this.zitadel.createUser({
+          ...input,
+          displayName: fullName(input.firstName, input.lastName),
+        }));
+      await this.zitadel.addGrant(userId, input.permissions);
+      console.info(`[users] Accesso a Dimmelo per ${userId} (${existing ? 'account esistente' : 'nuovo account'})`);
+      const user = await this.find(userId);
+      return { user: await this.dto(user), invite: await this.inviteFor(userId) };
     });
-    return { user: toUserDto(user), invite: await this.invites.issue(user) };
   }
 
-  async update(id: number, input: UserInputDto, actor: AuthUser): Promise<UserDto> {
-    const user = await this.find(id);
-    if (user.id === actor.id) {
-      if (input.isAdmin !== user.is_admin || !sameSet(input.permissions, user.permissions)) {
+  async update(id: string, input: UserInputDto, actor: AuthUser): Promise<UserDto> {
+    const grant = await this.find(id);
+    const self = id === actor.idp_user_id;
+    if (self) {
+      if (!sameSet(input.permissions, grant.roleKeys)) {
         throw conflict('Non puoi cambiare i tuoi permessi');
       }
     } else {
-      this.checkCanManage(actor, user);
-      this.checkAssignment(actor, input);
-      if (user.is_admin && !input.isAdmin) await this.ensureOtherAdmin(user);
+      this.checkCanManage(actor, grant);
+      this.checkAssignment(actor, input.permissions);
+      if (!effectivePermissions(input.permissions).includes('users.manage')) {
+        await this.ensureOtherManager(grant);
+      }
     }
-    const sameEmail = await this.repository.findByEmail(input.email);
-    if (sameEmail && sameEmail.id !== id) {
-      throw conflict('Esiste già un utente con questa email');
-    }
-
-    const changes = {
-      first_name: input.firstName,
-      last_name: input.lastName,
-      display_name: fullName(input.firstName, input.lastName),
-      email: input.email,
-      phone: input.phone,
-      is_admin: input.isAdmin,
-    };
-    const changesIdentity =
-      user.first_name !== input.firstName ||
-      user.last_name !== input.lastName ||
-      user.email !== input.email;
-    // l'identità è condivisa con le altre app: nome ed email restano allineati su ZITADEL
-    if (changesIdentity) await this.accounts.sync({ ...user, ...changes });
-    const updated = await this.db.transaction(async (tx) => {
-      const users = this.models(tx);
-      const row = await users.update(id, changes);
-      await users.setPermissions(id, input.permissions);
-      return { ...row, permissions: input.permissions };
+    return this.call(async () => {
+      if (input.email !== grant.email.toLowerCase()) {
+        const sameEmail = await this.zitadel.findUserByEmail(input.email);
+        if (sameEmail && sameEmail.userId !== id) {
+          throw conflict('Esiste già un account con questa email');
+        }
+      }
+      const displayName = fullName(input.firstName, input.lastName);
+      if (
+        input.firstName !== grant.firstName ||
+        input.lastName !== grant.lastName ||
+        input.email !== grant.email.toLowerCase()
+      ) {
+        // l'identità è condivisa con le altre app: il nome cambia anche lì
+        await this.zitadel.updateUser(id, { ...input, displayName });
+      }
+      if (!sameSet(input.permissions, grant.roleKeys)) {
+        // le sessioni aperte prendono i nuovi permessi al prossimo refresh (entro 5 minuti)
+        await this.zitadel.updateGrant(id, grant.grantId, input.permissions);
+      }
+      return this.dto(await this.find(id));
     });
-    return toUserDto(updated);
   }
 
-  /** Nuovo link d'invito (es. il precedente è scaduto o l'utente ha perso la passkey). */
-  async invite(id: number, actor: AuthUser): Promise<InviteDto> {
-    const user = await this.find(id);
-    this.checkCanManage(actor, user);
-    if (user.disabled_at) throw conflict("L'utente è disattivato");
-    return this.invites.issue(user);
+  /** Nuovo link per registrare una passkey (es. il precedente è scaduto o l'ha persa). */
+  async invite(id: string, actor: AuthUser): Promise<InviteDto> {
+    const grant = await this.find(id);
+    this.checkCanManage(actor, grant);
+    if (!grant.active) throw conflict("L'accesso dell'utente è disattivato");
+    return this.call(() => this.inviteFor(id));
   }
 
-  /**
-   * Disattiva: niente più accesso a palio, sessioni chiuse e link d'accesso annullato.
-   * L'account ZITADEL resta: può servire alle altre app.
-   */
-  async disable(id: number, actor: AuthUser): Promise<UserDto> {
-    const user = await this.find(id);
-    if (user.id === actor.id) throw conflict('Non puoi disattivare te stesso');
-    this.checkCanManage(actor, user);
-    if (user.disabled_at) return toUserDto(user);
-    if (user.is_admin) await this.ensureOtherAdmin(user);
-
-    const updated = await this.db.transaction(async (tx) => {
-      const users = this.models(tx);
-      await users.deleteSessions(id);
-      return users.update(id, {
-        disabled_at: new Date(),
-        access_link_hash: null,
-        access_link_expires_at: null,
-      });
-    });
-    return toUserDto({ ...updated, permissions: user.permissions });
+  /** Sospende l'accesso a Dimmelo (i ruoli restano) e chiude le sessioni aperte. */
+  async disable(id: string, actor: AuthUser): Promise<UserDto> {
+    if (id === actor.idp_user_id) throw conflict('Non puoi disattivare te stesso');
+    const grant = await this.find(id);
+    this.checkCanManage(actor, grant);
+    if (!grant.active) return this.dto(grant);
+    await this.ensureOtherManager(grant);
+    await this.call(() => this.zitadel.deactivateGrant(id, grant.grantId));
+    await this.repository.deleteSessions(id);
+    return this.dto({ ...grant, active: false });
   }
 
-  async enable(id: number, actor: AuthUser): Promise<UserDto> {
-    const user = await this.find(id);
-    this.checkCanManage(actor, user);
-    if (!user.disabled_at) return toUserDto(user);
-    const updated = await this.repository.update(id, { disabled_at: null });
-    return toUserDto({ ...updated, permissions: user.permissions });
+  async enable(id: string, actor: AuthUser): Promise<UserDto> {
+    const grant = await this.find(id);
+    this.checkCanManage(actor, grant);
+    if (grant.active) return this.dto(grant);
+    await this.call(() => this.zitadel.reactivateGrant(id, grant.grantId));
+    return this.dto({ ...grant, active: true });
   }
 
-  /**
-   * Elimina l'utente da palio (con permessi e sessioni). L'identità su ZITADEL e le passkey
-   * restano: sono condivise con le altre app.
-   */
-  async remove(id: number, actor: AuthUser): Promise<void> {
-    const user = await this.find(id);
-    if (user.id === actor.id) throw conflict('Non puoi eliminare te stesso');
-    this.checkCanManage(actor, user);
-    if (user.is_admin && !user.disabled_at) await this.ensureOtherAdmin(user);
-    if (!(await this.repository.delete(id))) throw notFound('Utente non trovato');
+  /** Toglie l'accesso a Dimmelo. L'account su ZITADEL e le passkey restano (altre app). */
+  async remove(id: string, actor: AuthUser): Promise<void> {
+    if (id === actor.idp_user_id) throw conflict('Non puoi eliminare te stesso');
+    const grant = await this.find(id);
+    this.checkCanManage(actor, grant);
+    if (grant.active) await this.ensureOtherManager(grant);
+    await this.call(() => this.zitadel.removeGrant(id, grant.grantId));
+    await this.repository.deleteSessions(id);
   }
 
-  /** Chi non è amministratore gestisce solo utenti con permessi che ha anche lui. */
-  private checkCanManage(actor: AuthUser, user: IUserWithPermissionsRow): void {
-    if (actor.is_admin) return;
-    if (user.is_admin) throw forbidden('Solo un amministratore può gestire un amministratore');
-    const own = effectivePermissions(false, actor.permissions);
-    if (!effectivePermissions(false, user.permissions).every((p) => own.includes(p))) {
+  /** Si gestiscono solo utenti con permessi che si hanno anche. */
+  private checkCanManage(actor: AuthUser, grant: ZitadelGrant): void {
+    const own = effectivePermissions(actor.permissions);
+    if (!effectivePermissions(grant.roleKeys).every((p) => own.includes(p))) {
       throw forbidden('Non puoi gestire un utente che ha permessi che tu non hai');
     }
   }
 
-  /** Chi non è amministratore assegna solo permessi che ha anche lui, e mai il ruolo di amministratore. */
-  private checkAssignment(actor: AuthUser, input: UserInputDto): void {
-    if (actor.is_admin) return;
-    if (input.isAdmin) throw forbidden('Solo un amministratore può nominare un amministratore');
-    const own = effectivePermissions(false, actor.permissions);
-    if (!effectivePermissions(false, input.permissions).every((p) => own.includes(p))) {
+  /** Si assegnano solo permessi che si hanno anche. */
+  private checkAssignment(actor: AuthUser, permissions: readonly string[]): void {
+    const own = effectivePermissions(actor.permissions);
+    if (!effectivePermissions(permissions).every((p) => own.includes(p))) {
       throw forbidden('Puoi assegnare solo i permessi che hai anche tu');
     }
   }
 
-  private async find(id: number): Promise<IUserWithPermissionsRow> {
-    const user = await this.repository.findWithPermissions(id);
-    if (!user) throw notFound('Utente non trovato');
-    return user;
+  /** Deve restare almeno un altro utente attivo che gestisce gli utenti. */
+  private async ensureOtherManager(grant: ZitadelGrant): Promise<void> {
+    if (!grant.active || !effectivePermissions(grant.roleKeys).includes('users.manage')) return;
+    const grants = await this.call(() => this.zitadel.listGrants());
+    const others = grants.filter(
+      (g) => g.userId !== grant.userId && g.active && effectivePermissions(g.roleKeys).includes('users.manage'),
+    );
+    if (others.length === 0) {
+      throw conflict('Deve restare almeno un utente attivo che gestisce gli utenti');
+    }
   }
 
-  private async ensureOtherAdmin(user: IUserWithPermissionsRow): Promise<void> {
-    if ((await this.repository.countOtherActiveAdmins(user.id)) === 0) {
-      throw conflict('Deve restare almeno un amministratore attivo');
+  private async find(id: string): Promise<ZitadelGrant> {
+    const [grant] = await this.call(() => this.zitadel.listGrants(id));
+    if (!grant) throw notFound('Utente non trovato');
+    return grant;
+  }
+
+  private async dto(grant: ZitadelGrant): Promise<UserDto> {
+    const logins = await this.repository.lastLogins([grant.userId]);
+    return toUserDto(grant, logins.get(grant.userId));
+  }
+
+  private async inviteFor(userId: string): Promise<InviteDto> {
+    return { url: await this.zitadel.passkeyRegistrationLink(userId) };
+  }
+
+  private async call<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (error) {
+      throw toHttpError(error);
     }
   }
 }
 
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === new Set(b).size && a.every((x) => b.includes(x));
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((x) => right.has(x));
 }

@@ -1,25 +1,22 @@
-import type { IAppUserRecord } from '../auth/auth-types.js';
 import type { UserDto, UserStatus } from '../auth/dto.js';
-import { isPermission } from '../auth/permissions.js';
-import type { IUserWithPermissionsRow } from '../../model/users.model.js';
+import { ALL_PERMISSIONS } from '../auth/permissions.js';
+import type { ZitadelGrant } from '../zitadel.js';
 
-export function userStatus(user: IAppUserRecord): UserStatus {
-  if (user.disabled_at) return 'disabled';
-  return user.last_login_at ? 'active' : 'invited';
+export function userStatus(grant: ZitadelGrant, lastLoginAt: Date | undefined): UserStatus {
+  if (!grant.active) return 'disabled';
+  return lastLoginAt ? 'active' : 'invited';
 }
 
-export function toUserDto(user: IUserWithPermissionsRow): UserDto {
+export function toUserDto(grant: ZitadelGrant, lastLoginAt: Date | undefined): UserDto {
   return {
-    id: user.id,
-    firstName: user.first_name,
-    lastName: user.last_name,
-    displayName: user.display_name,
-    email: user.email,
-    phone: user.phone,
-    isAdmin: user.is_admin,
-    permissions: user.permissions.filter(isPermission),
-    status: userStatus(user),
-    lastLoginAt: user.last_login_at?.toISOString() ?? null,
-    createdAt: user.created_at.toISOString(),
+    id: grant.userId,
+    firstName: grant.firstName,
+    lastName: grant.lastName,
+    displayName: grant.displayName || [grant.firstName, grant.lastName].filter(Boolean).join(' '),
+    email: grant.email,
+    permissions: ALL_PERMISSIONS.filter((p) => grant.roleKeys.includes(p)),
+    status: userStatus(grant, lastLoginAt),
+    lastLoginAt: lastLoginAt?.toISOString() ?? null,
+    createdAt: grant.createdAt,
   };
 }

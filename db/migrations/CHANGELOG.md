@@ -1,10 +1,11 @@
 ## WIP
 
 ### 0003_auth.sql
-- Autenticazione come dimora: `app_user` (anagrafica, `is_admin`, `idp_user_id` ZITADEL, link d'accesso monouso), `user_permission` (`chat.use`, `users.view`, `users.manage`), `user_session` (solo hash del token)
-- Funzione `set_updated_at()` e trigger su `app_user`; email unica senza distinzione di maiuscole
-- Utenti di partenza da `dimmelo_users` (il più vecchio amministratore, tutti `chat.use`); `dimmelo_users` resta ma non è più letta
+- Login OIDC con ZITADEL: chi entra e con quali permessi lo decidono i ruoli del progetto Dimmelo (`chat.use`, `users.view`, `users.manage`)
+- `app_user`: profilo di chi è entrato almeno una volta (`idp_user_id` ZITADEL, nome, email, ultimo accesso)
+- `user_session`: solo hash del token; permessi dell'ultimo token, refresh token cifrato, ID token per il logout
 - `REVOKE` su `palio_chat_ro`: la chat non vede le tabelle di autenticazione
+- Utenti di `dimmelo_users` portati su ZITADEL con `npm run import:dimmelo-users` (non dalla migrazione); `dimmelo_users` resta ma non è più letta
 
 ### 0002_palii_pittore_drappellone.sql
 - `palii.pittore_drappellone` — nome del pittore del drappellone (testo; NULL se assente sul sito)

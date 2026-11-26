@@ -1,114 +1,99 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { AuthService, DISABLED, NO_PASSKEY, NOT_RECOGNIZED } from '../src/lib/auth/auth-service.js';
-import type { IAppUserRecord } from '../src/lib/auth/auth-types.js';
-import type { PasskeyCredentialDto } from '../src/lib/auth/dto.js';
+import { AuthService, NO_ACCESS } from '../src/lib/auth/auth-service.js';
+import type { LoginState } from '../src/lib/auth/login-state.js';
+import type { OidcIdentity } from '../src/lib/auth/oidc-client.js';
 import type { SessionService } from '../src/lib/auth/session-service.js';
 import { HttpError } from '../src/lib/http-error.js';
-import { ZitadelError, type ZitadelService } from '../src/lib/zitadel.js';
 import type { ModelAuth } from '../src/model/auth.model.js';
 
-const status = (code: number, message?: string) => (e: unknown) =>
-  e instanceof HttpError && e.status === code && (message === undefined || e.message === message);
-
-const anna = {
-  id: 5,
+const identity = (permissions: OidcIdentity['permissions']): OidcIdentity => ({
+  idpUserId: 'z-1',
+  displayName: 'Anna Rossi',
   email: 'anna@example.com',
-  idp_user_id: 'z-5',
-  disabled_at: null,
-} as IAppUserRecord;
-const credential = { id: 'c', rawId: 'c', type: 'public-key', response: {} } as PasskeyCredentialDto;
-
-function setup(opts: { users?: IAppUserRecord[]; startError?: Error; finish?: string | Error } = {}) {
-  const users = opts.users ?? [anna];
-  const calls: string[] = [];
-  const model = {
-    findUserByEmail: async (email: string) => users.find((u) => u.email === email) ?? null,
-    findUserById: async (id: number) => users.find((u) => u.id === id) ?? null,
-    touchLogin: async (id: number) => void calls.push(`touch:${id}`),
-    findPermissions: async () => ['chat.use'],
-  } as unknown as ModelAuth;
-  const zitadel = {
-    startLogin: async (userId: string) => {
-      if (opts.startError) throw opts.startError;
-      calls.push(`start:${userId}`);
-      return { sessionId: 's-1', options: { challenge: 'abc' } };
-    },
-    finishLogin: async () => {
-      const result = opts.finish ?? 'z-5';
-      if (result instanceof Error) throw result;
-      return result;
-    },
-  } as unknown as ZitadelService;
-  const sessions = {
-    create: async (id: number) => {
-      calls.push(`session:${id}`);
-      return { token: 't', expiresAt: new Date() };
-    },
-  } as unknown as SessionService;
-  return { service: new AuthService(zitadel, sessions, model), calls };
-}
-
-const state = { sessionId: 's-1', userId: 5, expiresAt: Date.now() + 60_000 };
-
-describe('AuthService.startLogin', () => {
-  it('utente con account collegato: challenge e stato con la sessione ZITADEL', async () => {
-    const { service, calls } = setup();
-    const { options, state } = await service.startLogin('anna@example.com', 'ip', 1000);
-    assert.deepEqual(options, { challenge: 'abc' });
-    assert.deepEqual(state, { sessionId: 's-1', userId: 5, expiresAt: 1000 + 5 * 60_000 });
-    assert.deepEqual(calls, ['start:z-5']);
-  });
-
-  it('email sconosciuta o senza account ZITADEL: stesso messaggio', async () => {
-    const { service } = setup({ users: [{ ...anna, idp_user_id: null }] });
-    for (const email of ['nessuno@example.com', 'anna@example.com']) {
-      await assert.rejects(service.startLogin(email, 'ip'), status(400, NO_PASSKEY));
-    }
-  });
-
-  it('nessuna passkey su ZITADEL → stesso messaggio; ZITADEL giù → errore', async () => {
-    const noPasskey = setup({ startError: new ZitadelError(400, 'begin login failed', 'WEBAU-4G8sw') });
-    await assert.rejects(noPasskey.service.startLogin('anna@example.com', 'ip'), status(400, NO_PASSKEY));
-    const down = setup({ startError: new ZitadelError(503, 'unavailable', undefined) });
-    await assert.rejects(down.service.startLogin('anna@example.com', 'ip'), status(502));
-  });
-
-  it('utente disattivato → 403', async () => {
-    const { service } = setup({ users: [{ ...anna, disabled_at: new Date() }] });
-    await assert.rejects(service.startLogin('anna@example.com', 'ip'), status(403, DISABLED));
-  });
-
-  it('limite di tentativi per IP', async () => {
-    const { service } = setup();
-    for (let i = 0; i < 30; i++) await service.startLogin('anna@example.com', 'ip', 1000);
-    await assert.rejects(service.startLogin('anna@example.com', 'ip', 1000), status(429));
-    await service.startLogin('anna@example.com', 'altro-ip', 1000);
-  });
+  permissions,
+  refreshToken: 'rt',
+  idToken: 'idt',
 });
 
-describe('AuthService.finishLogin', () => {
-  it('passkey verificata per lo stesso utente: sessione', async () => {
+function setup(permissions: OidcIdentity['permissions'] = ['chat.use']) {
+  const calls: unknown[][] = [];
+  const oidc = {
+    authorizationUrl: async (p: { state: string; nonce: string; codeVerifier: string }) => {
+      calls.push(['authorize', p]);
+      return `https://id.example.com/oauth/v2/authorize?state=${p.state}`;
+    },
+    exchange: async (query: string, expected: LoginState) => {
+      calls.push(['exchange', query, expected.state]);
+      return identity(permissions);
+    },
+    endSessionUrl: async (idToken: string | null) => `https://id.example.com/end?hint=${idToken}`,
+  };
+  const sessions = {
+    create: async (userId: number, ua: string | null, id: OidcIdentity) => {
+      calls.push(['session', userId, ua, id.permissions]);
+      return { token: 'tok', expiresAt: new Date(0) };
+    },
+    destroy: async (token: string) => {
+      calls.push(['destroy', token]);
+      return 'idt-sessione';
+    },
+  } as unknown as SessionService;
+  const model = {
+    upsertUser: async (u: { idp_user_id: string; display_name: string; email: string | null }) => {
+      calls.push(['upsert', u]);
+      return { id: 7, ...u, last_login_at: new Date(), created_at: new Date() };
+    },
+  } as unknown as ModelAuth;
+  return { service: new AuthService(oidc, sessions, model), calls };
+}
+
+const state: LoginState = {
+  state: 's',
+  nonce: 'n',
+  codeVerifier: 'v',
+  returnTo: '/utenti',
+  expiresAt: Date.now() + 60_000,
+};
+
+describe('AuthService', () => {
+  it('startLogin: stato casuale, PKCE e returnTo solo interno', async () => {
+    const { service } = setup();
+    const a = await service.startLogin('/utenti');
+    const b = await service.startLogin('https://evil.com');
+    assert.equal(a.state.returnTo, '/utenti');
+    assert.equal(b.state.returnTo, '/');
+    assert.notEqual(a.state.state, b.state.state);
+    assert.notEqual(a.state.nonce, b.state.nonce);
+    assert.ok(a.state.codeVerifier.length >= 43);
+    assert.ok(a.url.includes(`state=${a.state.state}`));
+  });
+
+  it('finishLogin: profilo aggiornato e sessione con i permessi del token', async () => {
+    const { service, calls } = setup(['chat.use', 'users.view']);
+    const signedIn = await service.finishLogin('code=c&state=s', state, 'Firefox');
+    assert.equal(signedIn.returnTo, '/utenti');
+    assert.deepEqual(signedIn.user.permissions, ['chat.use', 'users.view']);
+    assert.deepEqual(calls, [
+      ['exchange', 'code=c&state=s', 's'],
+      ['upsert', { idp_user_id: 'z-1', display_name: 'Anna Rossi', email: 'anna@example.com' }],
+      ['session', 7, 'Firefox', ['chat.use', 'users.view']],
+    ]);
+  });
+
+  it('finishLogin senza ruoli sul progetto: 403, nessuna sessione', async () => {
+    const { service, calls } = setup([]);
+    await assert.rejects(
+      service.finishLogin('code=c', state, null),
+      (e: unknown) => e instanceof HttpError && e.status === 403 && e.message === NO_ACCESS,
+    );
+    assert.ok(!calls.some((c) => c[0] === 'session'));
+  });
+
+  it('logout: chiude la sessione e usa il suo ID token per uscire da ZITADEL', async () => {
     const { service, calls } = setup();
-    const { user } = await service.finishLogin(state, credential, null);
-    assert.equal(user.id, 5);
-    assert.deepEqual(user.permissions, ['chat.use']);
-    assert.deepEqual(calls, ['touch:5', 'session:5']);
-  });
-
-  it('passkey rifiutata da ZITADEL → 401', async () => {
-    const { service } = setup({ finish: new ZitadelError(400, 'invalid', undefined) });
-    await assert.rejects(service.finishLogin(state, credential, null), status(401, NOT_RECOGNIZED));
-  });
-
-  it('la sessione ZITADEL è di un altro utente → 401', async () => {
-    const { service } = setup({ finish: 'z-altro' });
-    await assert.rejects(service.finishLogin(state, credential, null), status(401));
-  });
-
-  it('disattivato nel frattempo → 403, nessuna sessione', async () => {
-    const { service, calls } = setup({ users: [{ ...anna, disabled_at: new Date() }] });
-    await assert.rejects(service.finishLogin(state, credential, null), status(403));
-    assert.deepEqual(calls, []);
+    assert.equal(await service.logout('tok'), 'https://id.example.com/end?hint=idt-sessione');
+    assert.deepEqual(calls, [['destroy', 'tok']]);
+    assert.equal(await service.logout(undefined), 'https://id.example.com/end?hint=null');
   });
 });

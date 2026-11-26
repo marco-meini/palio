@@ -1,20 +1,21 @@
-import { DatePipe } from '@angular/common';
 import { Component, computed, input, output, signal } from '@angular/core';
 import type { InviteDto } from '../../core/auth/dto';
 
-/** Link d'invito da copiare o condividere con il nuovo utente. */
+/** Link per creare la passkey, da copiare o condividere con l'utente. */
 @Component({
   selector: 'app-invite-panel',
-  imports: [DatePipe],
   template: `
     <div class="rounded-xl border border-amber-200 bg-amber-50 p-5">
       <div class="flex items-start justify-between gap-4">
         <div>
           <h2 class="font-semibold text-amber-900">Link d'invito per {{ name() }}</h2>
           <p class="mt-1 text-sm text-amber-800">
-            Mandalo a {{ name() }}: aprendolo entra in Dimmelo e registra la sua passkey (Face ID,
-            Touch ID o chiavetta). Vale una sola volta, fino al
-            {{ invite().expiresAt | date: 'd MMMM, HH:mm' }}.
+            Mandalo a {{ name() }}: aprendolo registra la sua passkey (Face ID, Touch ID o
+            chiavetta) e poi entra in Dimmelo. Vale una sola volta e scade presto: se non lo usa
+            subito, generane uno nuovo.
+          </p>
+          <p class="mt-1 text-sm text-amber-800">
+            Se usa Google con questa stessa email, può anche entrare direttamente con Google.
           </p>
         </div>
         <button
@@ -65,7 +66,7 @@ export class InvitePanel {
   protected readonly canShare = typeof navigator !== 'undefined' && 'share' in navigator;
   private readonly message = computed(
     () =>
-      `Ciao ${this.name()}, ecco il tuo link per entrare in Dimmelo e creare la passkey: ${this.invite().url}`,
+      `Ciao ${this.name()}, ecco il tuo link per creare la passkey ed entrare in Dimmelo: ${this.invite().url}`,
   );
 
   protected async copy(): Promise<void> {

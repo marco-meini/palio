@@ -2,15 +2,19 @@ import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, signal } from '@angular/core';
 import { Router, type UrlTree } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import type { CurrentUserDto, PasskeyLoginStartResponseDto, Permission } from './dto';
-import { usePasskey } from './webauthn';
+import type { CurrentUserDto, LogoutResponseDto, Permission } from './dto';
 
-/** Email dell'ultimo accesso, per non doverla riscrivere (solo comodità, nessun segreto). */
-const EMAIL_KEY = 'dimmelo.email';
+/** Navigazione del browser fuori dall'app (login e logout su ZITADEL); sostituibile nei test. */
+export const browserLocation = {
+  assign(url: string): void {
+    window.location.assign(url);
+  },
+};
 
 /**
- * Stato di autenticazione. La sessione è un cookie httpOnly gestito dal backend:
- * il frontend non vede né conserva token, chiede solo chi è l'utente corrente.
+ * Stato di autenticazione. Il login avviene sulla pagina di ZITADEL (OIDC) e la sessione è un
+ * cookie httpOnly gestito dal backend: il frontend non vede né conserva token, chiede solo chi
+ * è l'utente corrente.
  */
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -20,7 +24,6 @@ export class AuthService {
 
   readonly user = this.current.asReadonly();
   readonly isAuthenticated = computed(() => this.current() !== null);
-  readonly isAdmin = computed(() => this.current()?.isAdmin ?? false);
 
   /** Carica l'utente corrente (all'avvio dell'app). Non lancia: se non autenticato, `user` è null. */
   async load(): Promise<void> {
@@ -31,43 +34,14 @@ export class AuthService {
     }
   }
 
-  /**
-   * Accesso con passkey nella pagina di Dimmelo: il backend chiede la challenge al provider di
-   * identità, il browser la firma (Face ID, Touch ID…), il backend la fa verificare e apre la
-   * sessione. Lancia l'errore HTTP o del browser se qualcosa non va.
-   */
-  async passkeyLogin(email: string): Promise<CurrentUserDto> {
-    const { options } = await firstValueFrom(
-      this.http.post<PasskeyLoginStartResponseDto>('/api/auth/passkey/start', { email }),
-    );
-    const credential = await usePasskey(options);
-    const user = await firstValueFrom(
-      this.http.post<CurrentUserDto>('/api/auth/passkey/finish', { credential }),
-    );
-    this.signedIn(user, email);
-    return user;
+  /** Va alla pagina di accesso di ZITADEL; dopo l'accesso il backend riporta a `returnTo`. */
+  login(returnTo = '/'): void {
+    browserLocation.assign(`/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
-  /** Sessione aperta (login o creazione della passkey dall'invito). */
-  signedIn(user: CurrentUserDto, email = user.email): void {
-    if (email) this.rememberEmail(email);
+  /** Utente corrente impostato a mano (es. nei test). */
+  signedIn(user: CurrentUserDto): void {
     this.current.set(user);
-  }
-
-  rememberedEmail(): string {
-    try {
-      return localStorage.getItem(EMAIL_KEY) ?? '';
-    } catch {
-      return '';
-    }
-  }
-
-  rememberEmail(email: string): void {
-    try {
-      localStorage.setItem(EMAIL_KEY, email);
-    } catch {
-      // storage non disponibile (navigazione privata): pazienza
-    }
   }
 
   /** URL della pagina di accesso, con la destinazione a cui tornare. */
@@ -84,19 +58,22 @@ export class AuthService {
     void this.router.navigateByUrl(page);
   }
 
+  /** Esce da Dimmelo e da ZITADEL (che poi riporta a `/uscito`). */
   async logout(): Promise<void> {
+    let target = '/uscito';
     try {
-      await firstValueFrom(this.http.post<void>('/api/auth/logout', null));
+      target = (await firstValueFrom(this.http.post<LogoutResponseDto>('/api/auth/logout', null)))
+        .logoutUrl;
     } catch {
       // sessione già scaduta o server irraggiungibile: si esce comunque da questo browser
     }
     this.current.set(null);
-    await this.router.navigateByUrl('/uscito');
+    browserLocation.assign(target);
   }
 
   /**
-   * `true` se l'utente ha il permesso (il backend manda già quelli effettivi: impliciti e, per
-   * l'amministratore, tutti). Serve a mostrare o nascondere: il controllo vero è sul backend.
+   * `true` se l'utente ha il permesso (il backend manda già quelli effettivi, impliciti
+   * compresi). Serve a mostrare o nascondere: il controllo vero è sul backend.
    */
   can(permission: Permission): boolean {
     return this.current()?.permissions.includes(permission) ?? false;

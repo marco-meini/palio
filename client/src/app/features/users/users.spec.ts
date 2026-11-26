@@ -10,13 +10,11 @@ import { UserForm } from './user-form';
 import { UsersList } from './users-list';
 
 const user = (over: Partial<UserDto>): UserDto => ({
-  id: 1,
+  id: '1',
   firstName: 'Anna',
   lastName: 'Rossi',
   displayName: 'Anna Rossi',
   email: 'anna@example.com',
-  phone: null,
-  isAdmin: false,
   permissions: ['users.view'],
   status: 'active',
   lastLoginAt: '2026-11-01T10:00:00Z',
@@ -25,6 +23,11 @@ const user = (over: Partial<UserDto>): UserDto => ({
 });
 
 const catalog: PermissionSectionDto[] = [
+  {
+    key: 'chat',
+    label: 'Chat',
+    permissions: [{ key: 'chat.use', label: 'Usare', description: '', implies: [] }],
+  },
   {
     key: 'users',
     label: 'Utenti',
@@ -36,11 +39,10 @@ const catalog: PermissionSectionDto[] = [
 ];
 
 const me = (over: Partial<CurrentUserDto> = {}): CurrentUserDto => ({
-  id: 99,
+  id: '99',
   displayName: 'Io',
   email: 'io@example.com',
-  isAdmin: true,
-  permissions: ['users.view', 'users.manage'],
+  permissions: ['chat.use', 'users.view', 'users.manage'],
   ...over,
 });
 
@@ -76,27 +78,26 @@ describe('Utenti', () => {
       .flush([
         user({}),
         user({
-          id: 2,
+          id: '2',
           firstName: 'Luca',
           displayName: 'Luca Bianchi',
+          email: 'luca@example.com',
           status: 'invited',
           lastLoginAt: null,
-          phone: '333 1234567',
         }),
-        user({ id: 3, displayName: 'Ex Ospite', status: 'disabled', permissions: [] }),
-        user({ id: 4, displayName: 'Capo', isAdmin: true }),
+        user({ id: '3', displayName: 'Ex Ospite', status: 'disabled', permissions: ['chat.use'] }),
+        user({ id: '4', displayName: 'Capo', permissions: ['chat.use', 'users.manage'] }),
       ]);
     await settle(fixture);
     const text = (fixture.nativeElement as HTMLElement).textContent!;
     expect(text).toContain('Anna Rossi');
     expect(text).toContain('Invitato');
-    expect(text).toContain('333 1234567');
+    expect(text).toContain('luca@example.com');
     expect(text).toContain("Non ha ancora effettuato l'accesso");
     expect(text).toContain('Disattivato');
     expect(text).toContain('Riattiva');
     expect(text).toContain('1 permesso');
-    expect(text).toContain('Nessun permesso');
-    expect(text).toContain('Amministratore');
+    expect(text).toContain('2 permessi');
   });
 
   it('elenco: elimina dopo la conferma nella modale', async () => {
@@ -105,7 +106,7 @@ describe('Utenti', () => {
     const http = TestBed.inject(HttpTestingController);
     http
       .expectOne('/api/users')
-      .flush([user({ id: 99, displayName: 'Io' }), user({ id: 2, displayName: 'Luca Bianchi' })]);
+      .flush([user({ id: '99', displayName: 'Io' }), user({ id: '2', displayName: 'Luca Bianchi' })]);
     await settle(fixture);
     const root = fixture.nativeElement as HTMLElement;
     const buttons = () => [...root.querySelectorAll('button')];
@@ -123,13 +124,13 @@ describe('Utenti', () => {
     const req = http.expectOne('/api/users/2');
     expect(req.request.method).toBe('DELETE');
     req.flush(null, { status: 204, statusText: 'No Content' });
-    await vi.waitFor(() => http.expectOne('/api/users').flush([user({ id: 99 })]));
+    await vi.waitFor(() => http.expectOne('/api/users').flush([user({ id: '99' })]));
     await settle(fixture);
     expect(root.querySelector('[role=dialog]')).toBeNull();
   });
 
   it('elenco: chi può solo vedere non ha i pulsanti di modifica', async () => {
-    TestBed.inject(AuthService).signedIn(me({ isAdmin: false, permissions: ['users.view'] }));
+    TestBed.inject(AuthService).signedIn(me({ permissions: ['users.view'] }));
     const fixture = TestBed.createComponent(UsersList);
     fixture.detectChanges();
     TestBed.inject(HttpTestingController)
@@ -172,13 +173,11 @@ describe('Utenti', () => {
       firstName: 'Luca',
       lastName: 'Bianchi',
       email: 'luca@example.com',
-      phone: null,
-      isAdmin: false,
       permissions: ['users.manage'],
     });
     req.flush({
-      user: user({ id: 2, firstName: 'Luca', displayName: 'Luca Bianchi', status: 'invited' }),
-      invite: { url: 'http://localhost:1411/lc/abc', expiresAt: '2026-11-20T10:00:00Z' },
+      user: user({ id: '2', firstName: 'Luca', displayName: 'Luca Bianchi', status: 'invited' }),
+      invite: { url: 'http://localhost:1411/lc/abc' },
     });
     await settle(fixture);
     expect(root.textContent).toContain('Luca Bianchi');
@@ -187,30 +186,24 @@ describe('Utenti', () => {
     );
   });
 
-  it('form: togliere vedere toglie anche modificare; amministratore spunta tutto', async () => {
+  it('form: togliere vedere toglie anche modificare', async () => {
     const { fixture, root } = await openForm();
     checkbox(root, 'Modificare').click();
     await settle(fixture);
     checkbox(root, 'Vedere').click();
     await settle(fixture);
     expect(checkbox(root, 'Modificare').checked).toBe(false);
-    checkbox(root, 'Amministratore').click();
-    await settle(fixture);
-    expect(checkbox(root, 'Vedere').checked).toBe(true);
-    expect(checkbox(root, 'Vedere').disabled).toBe(true);
   });
 
-  it('form: chi gestisce gli utenti senza essere amministratore non nomina amministratori', async () => {
-    TestBed.inject(AuthService).signedIn(
-      me({ isAdmin: false, permissions: ['users.view', 'users.manage'] }),
-    );
+  it('form: si assegnano solo i permessi che si hanno', async () => {
+    TestBed.inject(AuthService).signedIn(me({ permissions: ['users.view', 'users.manage'] }));
     const { root } = await openForm();
-    expect(checkbox(root, 'Amministratore').disabled).toBe(true);
     expect(checkbox(root, 'Modificare').disabled).toBe(false);
+    expect(checkbox(root, 'Usare').disabled).toBe(true);
   });
 
   it('form: chi può solo vedere apre la scheda in sola lettura', async () => {
-    TestBed.inject(AuthService).signedIn(me({ isAdmin: false, permissions: ['users.view'] }));
+    TestBed.inject(AuthService).signedIn(me({ permissions: ['users.view'] }));
     const { root } = await openForm();
     expect(checkbox(root, 'Vedere').disabled).toBe(true);
     expect(root.querySelector('button[type="submit"]')).toBeNull();
@@ -220,10 +213,7 @@ describe('Utenti', () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     const fixture = TestBed.createComponent(InvitePanel);
-    fixture.componentRef.setInput('invite', {
-      url: 'http://id/lc/x',
-      expiresAt: '2026-11-20T10:00:00Z',
-    });
+    fixture.componentRef.setInput('invite', { url: 'http://id/lc/x' });
     fixture.componentRef.setInput('name', 'Luca');
     await settle(fixture);
     const copy = [...(fixture.nativeElement as HTMLElement).querySelectorAll('button')].find((b) =>
