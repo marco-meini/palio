@@ -37,6 +37,7 @@ import {
   loadContradeMap,
 } from '../lib/entities.js';
 import { recomputeContradaCuffia } from '../lib/recompute-contrada-cuffia.js';
+import { findSameDatePalio } from '../lib/palio-same-date.js';
 
 loadEnvFiles();
 
@@ -54,6 +55,8 @@ Options:
   --max N                  Max Palii to fetch (default: 20, or 1 with --source-code alone)
   --delay-ms MS            Pause between HTTP requests (default: 800)
   --fail-fast              Stop on first fetch/parse/import error
+  --allow-same-date        Import even if another Palio of the same type already has that date
+                           (by default it is skipped as a probable duplicate with another code)
   --help                   Show this help
 
 Examples:
@@ -68,6 +71,7 @@ function parseArgs(argv) {
     delayMs: 800,
     failFast: false,
     untilDate: null,
+    allowSameDate: false,
   };
   let explicitMax = false;
   let usedSourceCode = false;
@@ -83,6 +87,7 @@ function parseArgs(argv) {
       explicitMax = true;
     } else if (a === '--delay-ms' && argv[i + 1]) opts.delayMs = Number(argv[++i]);
     else if (a === '--fail-fast') opts.failFast = true;
+    else if (a === '--allow-same-date') opts.allowSameDate = true;
     else if (a === '--help') {
       console.log(HELP_TEXT);
       process.exit(0);
@@ -418,6 +423,20 @@ async function main() {
         url = prevPalioUrlFromHtml(canapeHtml);
         if (url && fetched < opts.max) await sleep(opts.delayMs);
         continue;
+      }
+
+      if (!opts.allowSameDate) {
+        const sameDate = await findSameDatePalio(client, sommario);
+        if (sameDate) {
+          const msg =
+            `probabile duplicato: in archivio c'è già il Palio ${sameDate.sourceCode} (id ${sameDate.id}) ` +
+            `con la stessa data ${sommario.dataPalio}; se sono davvero due Palii rilancia con --allow-same-date`;
+          console.error(`SKIP (stessa data): ${msg}`);
+          errors.push({ code, msg });
+          url = prevPalioUrlFromHtml(canapeHtml);
+          if (url && fetched < opts.max) await sleep(opts.delayMs);
+          continue;
+        }
       }
 
       let canapeRows;

@@ -97,6 +97,7 @@ Pick `--end-code` / start URL from the most recent Palio in the range on [ilpali
 | `--max N` | Max Palii to attempt (default 20; 1 with `--source-code` only) |
 | `--delay-ms MS` | Pause between requests (default **800**; keep ≥500 to be polite) |
 | `--fail-fast` | Abort on first fetch/parse/import error |
+| `--allow-same-date` | Import even if another Palio of the same type already has that date (default: skip as probable duplicate, e.g. 2026 `202607020` vs `202607030`) |
 
 Help: `npx tsx src/tasks/scrape-ilpalio.js --help`
 
