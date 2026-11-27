@@ -11,3 +11,6 @@ server/config/google-oauth.json
 .skills/postgres/config.toml
 
 scripts/release.conf
+
+# build del server (le immagini Docker lo ricostruiscono)
+server/dist/
