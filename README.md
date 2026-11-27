@@ -103,12 +103,13 @@ non resta nessun ruolo o ZITADEL rifiuta il refresh, la sessione si chiude). Ogn
 *Role Assignments* del progetto): la pagina lavora sugli accessi al progetto (*user grant*) con
 il service account di palio.
 
-- **Nuovo utente.** Collega l'account ZITADEL con la stessa email (es. già usato per dimora) o
-  lo crea con email verificata, assegna i ruoli e genera un **link per creare la passkey** sulla
+- **Nuovo utente.** Collega l'account ZITADEL con la stessa email nell'organizzazione di
+  Dimmelo (`ZITADEL_ORG_ID`; le altre app hanno la loro organizzazione e i loro utenti) o lo
+  crea con email verificata, assegna i ruoli e genera un **link per creare la passkey** sulla
   pagina di ZITADEL, da mandare all'utente (monouso, scade presto: se serve se ne genera un altro
   con *Invito*). Se l'utente usa Google con la stessa email può entrare direttamente con Google
   (collegamento automatico per email).
-- **Modifica.** Nome ed email cambiano sull'account ZITADEL, quindi anche nelle altre app; i
+- **Modifica.** Nome ed email cambiano sull'account ZITADEL; i
   permessi sul ruolo del progetto.
 - **Disattivazione.** Sospende l'accesso a Dimmelo (i ruoli restano) e chiude le sessioni.
 - **Eliminazione.** Toglie l'accesso a Dimmelo; l'account ZITADEL e le passkey restano.
@@ -240,7 +241,7 @@ Se il tag non corrisponde a `package.json`, la CI fallisce. La CI non accede al 
 
 Produzione: Dimmelo su `https://dimmelo.marcomeini.it`, dietro Caddy sul server ([`docker/caddy-dimmelo.snippet`](docker/caddy-dimmelo.snippet)), con Postgres nel container `postgres` (rete Docker `postgres`).
 
-Sul server c'è una copia del repo (`git clone`), con il `.env.production` nella root. Sul server non c'è nessuna chiave per GitHub: ci si entra con l'inoltro dell'ssh-agent (`ssh -A`, o `ForwardAgent yes` solo per quell'host in `~/.ssh/config`), così `git pull` e `git push` usano la chiave locale finché la sessione è aperta. Il rilascio si lancia lì, a mano:
+Sul server c'è una copia del repo (`git clone`); il `.env.production` nella root lo scrive lo script di rilascio decifrando `secrets/production.env` (vedi **Segreti di produzione**). Sul server non c'è nessuna chiave per GitHub: ci si entra con l'inoltro dell'ssh-agent (`ssh -A`, o `ForwardAgent yes` solo per quell'host in `~/.ssh/config`), così `git pull` e `git push` usano la chiave locale finché la sessione è aperta. Il rilascio si lancia lì, a mano:
 
 ```bash
 ssh -A <utente>@<server>
@@ -269,6 +270,24 @@ Lo script:
 Opzioni: `--dry-run`, `--yes` (senza conferma), `--skip-migrations`, `--skip-deploy`, `--build`.
 Con `--build`, o con `IMAGE_PREFIX` vuoto in `release.conf`, le immagini si costruiscono sul
 server. Serve, per esempio, se GHCR non risponde.
+
+**Segreti di produzione** (SOPS + age). La configurazione di produzione sta nel repo, cifrata,
+in [`secrets/production.env`](secrets/production.env): si leggono i nomi delle variabili, non i
+valori. Le regole sono in [`.sops.yaml`](.sops.yaml). La chiave privata age sta in
+`~/.config/sops/age/keys.txt` sul Mac e sul server, con una copia in 1Password ("SOPS age key –
+produzione"): senza chiave i segreti non si recuperano.
+
+```bash
+brew install sops age                 # sul Mac, una volta
+echo 'export SOPS_AGE_KEY_FILE="$HOME/.config/sops/age/keys.txt"' >> ~/.zshrc   # su macOS sops non guarda in ~/.config
+sops secrets/production.env           # apre in chiaro nell'editor, ricifra al salvataggio
+git commit secrets/production.env && git push
+```
+
+Sul server `scripts/release.sh` decifra il file e scrive `.env.production` prima di riavviare i
+container. Per rilasciare solo una modifica ai segreti basta rilanciare lo script: non serve una
+nuova versione. Non committare mai il file in chiaro: prima del commit, `head -3
+secrets/production.env` deve mostrare valori `ENC[…]`.
 
 **Accesso del server alle immagini** (una volta, se le immagini su GHCR sono private).
 1. Su GitHub crea un token *classic* con il solo permesso `read:packages`

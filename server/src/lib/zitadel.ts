@@ -64,19 +64,21 @@ interface UserJson {
 
 /**
  * Client delle API di gestione di ZITADEL con il token del service account di palio (mai nel
- * browser): utenti (condivisi con le altre app) e loro accesso al progetto Dimmelo.
+ * browser): utenti dell'organizzazione di Dimmelo e loro accesso al progetto Dimmelo.
  * Il login invece passa da OIDC (`lib/auth/oidc-client.ts`).
  */
 export class ZitadelService {
-  private orgId?: Promise<string>;
-
   constructor(private readonly config: ZitadelConfig) {}
 
-  /** Utente umano con quella email (senza distinzione di maiuscole), se esiste. */
+  /**
+   * Utente umano con quella email (senza distinzione di maiuscole) nell'organizzazione di
+   * Dimmelo, se esiste. Gli account delle altre organizzazioni (altre app) non si vedono.
+   */
   async findUserByEmail(email: string): Promise<ZitadelUser | null> {
     const { result } = await this.request<{ result?: UserJson[] }>('POST', '/v2/users', {
       query: { limit: 2 },
       queries: [
+        { organizationIdQuery: { organizationId: this.config.organizationId } },
         { emailQuery: { emailAddress: email, method: 'TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE' } },
         { typeQuery: { type: 'TYPE_HUMAN' } },
       ],
@@ -98,7 +100,7 @@ export class ZitadelService {
    */
   async createUser(input: ZitadelUserInput): Promise<string> {
     const { id } = await this.request<{ id: string }>('POST', '/v2/users/new', {
-      organizationId: await this.organizationId(),
+      organizationId: this.config.organizationId,
       username: input.email,
       human: {
         profile: { givenName: input.firstName, familyName: input.lastName, displayName: input.displayName },
@@ -129,7 +131,7 @@ export class ZitadelService {
       `/v2/users/${enc(userId)}/passkeys/registration_link`,
       { returnCode: {} },
     );
-    const organization = await this.organizationId();
+    const organization = this.config.organizationId;
     if (this.config.loginV2) {
       const params = new URLSearchParams({ userId, organization, codeId: code.id, code: code.code });
       return `${appUrl}/api/auth/invito?${params.toString()}`;
@@ -199,25 +201,13 @@ export class ZitadelService {
     await this.request('DELETE', `/management/v1/users/${enc(userId)}/grants/${enc(grantId)}`);
   }
 
-  /** Organizzazione degli utenti: configurata o quella del service account (in cache). */
-  private organizationId(): Promise<string> {
-    if (this.config.organizationId) return Promise.resolve(this.config.organizationId);
-    this.orgId ??= this.request<{ user: { details: { resourceOwner: string } } }>('GET', '/auth/v1/users/me')
-      .then((me) => me.user.details.resourceOwner)
-      .catch((error: unknown) => {
-        this.orgId = undefined;
-        throw error;
-      });
-    return this.orgId;
-  }
-
   private async request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
     if (!this.config.token) {
       throw badGateway('Gestione utenti non configurata (manca ZITADEL_TOKEN)');
     }
     // le API v1 di gestione lavorano nel contesto di un'organizzazione
     const orgHeader: Record<string, string> =
-      path.startsWith('/management/') ? { 'x-zitadel-orgid': await this.organizationId() } : {};
+      path.startsWith('/management/') ? { 'x-zitadel-orgid': this.config.organizationId } : {};
     let response: Response;
     try {
       response = await fetch(`${this.config.url}${path}`, {

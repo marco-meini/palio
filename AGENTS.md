@@ -50,7 +50,7 @@ cd server && npm run index-regolamento
 - **Backend**: Express 5, TypeScript (`NodeNext`, ESM), `tsx` in dev, Vercel AI SDK + `@ai-sdk/anthropic`, `pg`, Cheerio, Zod
 - **Frontend**: Angular 21 standalone, signals, Tailwind 4, `marked` + DOMPurify
 - **DB**: Postgres; chat preferisce utente read-only (`CHAT_DATABASE_URL` / `palio_chat_ro`)
-- **Auth**: OIDC con ZITADEL (`lib/auth/oidc-client.ts`, `openid-client`; login su ZITADEL con passkey o Google), sessioni server-side (cookie httpOnly `palio_sid`, in DB solo l'hash, refresh token cifrato). Permessi = ruoli del progetto Dimmelo su ZITADEL; pagina Utenti via API di gestione (`lib/zitadel.ts`, user grant)
+- **Auth**: OIDC con ZITADEL (`lib/auth/oidc-client.ts`, `openid-client`; login su ZITADEL con passkey o Google), sessioni server-side (cookie httpOnly `palio_sid`, in DB solo l'hash, refresh token cifrato). Permessi = ruoli del progetto Dimmelo su ZITADEL; pagina Utenti via API di gestione (`lib/zitadel.ts`, user grant). Dimmelo ha la sua organizzazione su ZITADEL (`ZITADEL_ORG_ID`, obbligatoria): login e ricerca utenti restano lì, gli utenti non sono condivisi con le altre app
 
 Nota: il README può citare Fastify storicamente — il server è **Express**.
 

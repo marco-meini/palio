@@ -14,7 +14,7 @@ describe('Invito con login (Login V2)', () => {
   const client = () =>
     new OidcClient({
       appUrl: 'https://app.example.com',
-      zitadel: { url: 'https://id.example.com', projectId: 'p1', token: undefined, organizationId: undefined, loginV2: true },
+      zitadel: { url: 'https://id.example.com', projectId: 'p1', token: undefined, organizationId: 'org1', loginV2: true },
       oidc: { clientId: 'cid', clientSecret: 'secret' },
     });
 

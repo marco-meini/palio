@@ -69,6 +69,9 @@ export class OidcClient {
           'offline_access',
           `urn:zitadel:iam:org:project:id:${this.config.zitadel.projectId}:aud`,
           'urn:zitadel:iam:org:projects:roles',
+          // login solo nell'organizzazione di Dimmelo: un account con la stessa email in
+          // un'altra organizzazione (altra app) non entra
+          `urn:zitadel:iam:org:id:${this.config.zitadel.organizationId}`,
         ].join(' '),
         code_challenge: await oidc.calculatePKCECodeChallenge(params.codeVerifier),
         code_challenge_method: 'S256',

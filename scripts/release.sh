@@ -17,8 +17,10 @@
 # 3. Codice: scarica le immagini della CI (con --build, o senza IMAGE_PREFIX, le costruisce
 #    sul server), riavvia i container (docker compose) e controlla l'health check.
 #
-# Configurazione in scripts/release.conf (da scripts/release.conf.example); il .env.production
-# sta nella root del repo.
+# Configurazione in scripts/release.conf (da scripts/release.conf.example). La configurazione di
+# produzione sta cifrata con SOPS in secrets/production.env: lo script la decifra (chiave age in
+# ~/.config/sops/age/keys.txt) e scrive .env.production nella root del repo. Una modifica a
+# secrets/production.env si rilascia rilanciando lo script, senza una nuova versione.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -27,6 +29,7 @@ cd "$ROOT"
 MIGRATIONS_DIR=db/migrations
 RELEASED_DIR=db/migrations/released
 CONF=scripts/release.conf
+SECRETS=secrets/production.env
 
 DRY_RUN=false
 ASSUME_YES=false
@@ -34,7 +37,7 @@ SKIP_MIGRATIONS=false
 SKIP_DEPLOY=false
 BUILD=false
 
-usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf '\nERRORE: %s\n' "$*" >&2; exit 1; }
 
@@ -71,7 +74,6 @@ psql_app() {
 log "Controlli"
 command -v git >/dev/null || die "git non trovato"
 docker compose version >/dev/null 2>&1 || die "docker compose non disponibile (l'utente è nel gruppo docker?)"
-[[ -f .env.production ]] || die "Manca .env.production nella root del repo (configurazione di produzione)"
 [[ -d "$RELEASED_DIR" ]] || die "Manca la cartella $RELEASED_DIR"
 git diff --quiet HEAD -- || die "Ci sono modifiche locali non committate: il server deve restare uguale al repository"
 [[ -n "$(git config user.email)" ]] || die "Imposta l'autore dei commit: git config user.name/user.email"
@@ -105,10 +107,25 @@ GIT_TAG="v$VERSION"
 git rev-parse -q --verify "refs/tags/$GIT_TAG" >/dev/null \
   || die "Manca il tag $GIT_TAG: in locale crea la versione (npm version patch|minor) e git push --follow-tags"
 git merge-base --is-ancestor "$GIT_TAG" HEAD || die "Il tag $GIT_TAG non è nella storia di $(git branch --show-current)"
-git diff --quiet "$GIT_TAG" HEAD -- . ':(exclude)db/migrations' \
+git diff --quiet "$GIT_TAG" HEAD -- . ':(exclude)db/migrations' ":(exclude)$SECRETS" \
   || die "Ci sono modifiche al codice dopo $GIT_TAG: crea una nuova versione per rilasciarle"
 [[ -z "$(git diff --name-only --diff-filter=A "$GIT_TAG" HEAD -- db/migrations ':(exclude)db/migrations/released')" ]] \
   || die "Ci sono migrazioni nuove dopo $GIT_TAG: crea una nuova versione per rilasciarle"
+
+# Configurazione di produzione: decifrata da $SECRETS (con --dry-run solo verificata).
+if [[ -f "$SECRETS" ]]; then
+  command -v sops >/dev/null || die "sops non trovato: serve per decifrare $SECRETS"
+  if $DRY_RUN; then
+    sops -d "$SECRETS" >/dev/null || die "Impossibile decifrare $SECRETS (manca la chiave age?)"
+    echo "$SECRETS decifrabile (--dry-run: .env.production non aggiornato)"
+  else
+    (umask 077 && sops -d --output .env.production.tmp "$SECRETS") \
+      || { rm -f .env.production.tmp; die "Impossibile decifrare $SECRETS (manca la chiave age?)"; }
+    mv .env.production.tmp .env.production
+    echo ".env.production aggiornato da $SECRETS"
+  fi
+fi
+[[ -f .env.production ]] || die "Manca .env.production nella root del repo (configurazione di produzione)"
 
 # Immagini: dalla CI (GHCR) se c'è IMAGE_PREFIX, altrimenti costruite qui.
 IMAGE_PREFIX="${IMAGE_PREFIX:-}"

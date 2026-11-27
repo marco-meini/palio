@@ -9,8 +9,9 @@ import { fullName } from './users-validation.js';
 
 /**
  * Utenti di Dimmelo: chi ha accesso al progetto Dimmelo su ZITADEL (user grant) e con quali
- * ruoli. ZITADEL è la fonte di verità; palio aggiunge solo l'ultimo accesso. Le identità sono
- * condivise con le altre app: togliere l'accesso a Dimmelo non tocca l'account.
+ * ruoli. ZITADEL è la fonte di verità; palio aggiunge solo l'ultimo accesso. Gli utenti stanno
+ * nell'organizzazione di Dimmelo su ZITADEL (ogni app ha la sua): togliere l'accesso a Dimmelo
+ * non cancella l'account.
  *
  * Regole: si gestiscono solo utenti con permessi che si hanno anche (cambiandogli l'email e
  * mandando un invito se ne prenderebbe il posto), si assegnano solo permessi propri, nessuno
@@ -92,7 +93,6 @@ export class UsersService {
         input.lastName !== grant.lastName ||
         input.email !== grant.email.toLowerCase()
       ) {
-        // l'identità è condivisa con le altre app: il nome cambia anche lì
         await this.zitadel.updateUser(id, { ...input, displayName });
       }
       if (!sameSet(input.permissions, grant.roleKeys)) {
@@ -131,7 +131,7 @@ export class UsersService {
     return this.dto({ ...grant, active: true });
   }
 
-  /** Toglie l'accesso a Dimmelo. L'account su ZITADEL e le passkey restano (altre app). */
+  /** Toglie l'accesso a Dimmelo. L'account su ZITADEL e le passkey restano. */
   async remove(id: string, actor: AuthUser): Promise<void> {
     if (id === actor.idp_user_id) throw conflict('Non puoi eliminare te stesso');
     const grant = await this.find(id);

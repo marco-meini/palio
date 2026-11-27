@@ -34,8 +34,12 @@ export interface ZitadelConfig {
    * Facoltativo: senza, il login funziona ma la gestione utenti risponde 502.
    */
   token: string | undefined;
-  /** Organizzazione in cui creare gli utenti; se assente, quella del service account. */
-  organizationId: string | undefined;
+  /**
+   * Organizzazione di Dimmelo su ZITADEL: ci stanno i suoi utenti, il progetto e il service
+   * account. Il login avviene solo lì e la ricerca per email non esce da lì (le altre app hanno
+   * la loro organizzazione e i loro utenti).
+   */
+  organizationId: string;
   /**
    * Il nuovo login di ZITADEL (Login V2, `/ui/v2/login`) è installato: i link d'invito usano
    * la sua pagina, che registra la passkey senza chiedere il nome del dispositivo.
@@ -85,7 +89,7 @@ export function loadAuthConfig(): AuthConfig {
       url: zitadelUrl,
       projectId: required('ZITADEL_PROJECT_ID'),
       token: process.env['ZITADEL_TOKEN'] || undefined,
-      organizationId: process.env['ZITADEL_ORG_ID'] || undefined,
+      organizationId: required('ZITADEL_ORG_ID'),
       loginV2: process.env['ZITADEL_LOGIN_V2'] === 'true',
     },
     oidc: {

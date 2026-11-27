@@ -1,0 +1,5 @@
+# SOPS: configurazione di produzione cifrata con age (vedi README «Segreti di produzione»).
+# Chiave privata: ~/.config/sops/age/keys.txt sul Mac e sul server, copia in 1Password.
+creation_rules:
+  - path_regex: ^secrets/.*\.env$
+    age: age10l2xzrg4ugm4mgj4vp6f4qv8uauvuuh0natng7mqfyfu48q3zadsdql98h

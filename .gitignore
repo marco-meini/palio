@@ -7,6 +7,7 @@ server/node_modules
 server/config/config.mjs
 server/config/google-oauth.json
 .env.production
+.env.production.tmp
 .skills/postgres/config.toml
 
 scripts/release.conf
