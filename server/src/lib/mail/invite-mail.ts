@@ -51,7 +51,10 @@ export function inviteMail(input: InviteMailInput): MailMessage {
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#fafaf9">
 <tr><td align="center" style="padding:32px 16px">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;background:#ffffff;border:1px solid #e7e5e4;border-radius:12px">
-<tr><td style="padding:28px 32px 8px;font-size:22px;font-weight:700;color:#b45309">Dimmelo</td></tr>
+<tr><td style="padding:28px 32px 8px"><table role="presentation" cellspacing="0" cellpadding="0"><tr>
+<td style="padding-right:12px"><img src="${escape(appUrl)}/logo-email.png" width="37" height="48" alt="" style="display:block;border:0"></td>
+<td style="font-size:22px;font-weight:700;color:#1c1917">Dimmelo</td>
+</tr></table></td></tr>
 <tr><td style="padding:16px 32px 8px">
 ${paragraph(`Ciao ${escape(name)},`)}
 ${paragraph(escape(intro))}

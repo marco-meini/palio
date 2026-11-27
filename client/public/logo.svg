@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="32 0 192 248" role="img" aria-label="Dimmelo">
+  <defs>
+    <path id="shield" d="M40 30 H216 V120 C216 172 186 200 148 214 L92 240 L102 212.8 C64 198 40 168 40 120 Z"/>
+    <clipPath id="clip"><use xlink:href="#shield"/></clipPath>
+    <g id="mangia">
+      <path d="M96 3 L99.5 12 H92.5 Z"/>
+      <rect x="92" y="12" width="8" height="9"/>
+      <rect x="89" y="21" width="14" height="15"/>
+      <rect x="85" y="36" width="22" height="3"/>
+      <rect x="85" y="33" width="4" height="4"/><rect x="94" y="33" width="4" height="4"/><rect x="103" y="33" width="4" height="4"/>
+      <rect x="85" y="39" width="22" height="7"/>
+      <path d="M85 46 H107 L102 52 H90 Z"/>
+      <rect x="90" y="52" width="12" height="70"/>
+    </g>
+    <mask id="gap" maskUnits="userSpaceOnUse" x="0" y="0" width="256" height="256">
+      <rect width="256" height="256" fill="#fff"/>
+      <use xlink:href="#mangia" fill="#000" stroke="#000" stroke-width="10" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="256" height="256" fill="#fff"/>
+    <rect y="120" width="256" height="136" fill="#141414"/>
+    <g fill="#141414">
+      <path d="M40 122 V108 H52 V104 H64 V92 H74 V104 H80 V100 H91 V122 Z"/>
+      <rect x="64" y="89" width="3" height="4"/><rect x="71" y="89" width="3" height="4"/>
+      <path d="M101 122 V92 H116 V80 H136 V92 H152 V122 Z"/>
+      <rect x="102" y="88" width="3" height="4"/><rect x="107.5" y="88" width="3" height="4"/>
+      <rect x="140" y="88" width="3" height="4"/><rect x="145.5" y="88" width="3" height="4"/><rect x="149" y="88" width="3" height="4"/>
+      <rect x="116" y="76" width="3" height="4"/><rect x="121.5" y="76" width="3" height="4"/><rect x="127" y="76" width="3" height="4"/><rect x="133" y="76" width="3" height="4"/>
+      <path d="M151 122 V110 H165 V122 Z"/>
+      <rect x="164" y="64" width="13" height="58"/>
+      <path d="M163 64 L170.5 48 L178 64 Z"/>
+      <rect x="163" y="61" width="2.5" height="5"/><rect x="175.5" y="61" width="2.5" height="5"/>
+      <rect x="176" y="104" width="40" height="18"/>
+      <rect x="184" y="96" width="24" height="10"/>
+      <path d="M184 97 A12 12 0 0 1 208 97 Z"/>
+      <rect x="193.5" y="78" width="5" height="8"/>
+      <path d="M194 78 L196 72 L198 78 Z"/>
+    </g>
+    <g fill="#fff">
+      <rect x="164" y="74" width="13" height="2"/><rect x="164" y="84" width="13" height="2"/>
+      <rect x="164" y="94" width="13" height="2"/><rect x="164" y="104" width="13" height="2"/>
+      <rect x="166.5" y="68" width="3" height="4" rx="1.5"/><rect x="171.5" y="68" width="3" height="4" rx="1.5"/>
+      <rect x="108" y="100" width="3" height="6" rx="1.5"/><rect x="117" y="100" width="3" height="6" rx="1.5"/>
+      <rect x="126" y="100" width="3" height="6" rx="1.5"/><rect x="135" y="100" width="3" height="6" rx="1.5"/>
+      <rect x="144" y="100" width="3" height="6" rx="1.5"/>
+      <rect x="121" y="86" width="3" height="5" rx="1.5"/><rect x="128.5" y="86" width="3" height="5" rx="1.5"/>
+    </g>
+  </g>
+  <use xlink:href="#shield" fill="none" stroke="#c8962e" stroke-width="9" stroke-linejoin="round" mask="url(#gap)"/>
+  <use xlink:href="#mangia" fill="#141414"/>
+  <g fill="#fff">
+    <path d="M90.5 34 v-8 a3 3 0 0 1 6 0 v8 z"/>
+    <path d="M96.5 34 v-8 a3 3 0 0 1 6 0 v8 z"/>
+  </g>
+</svg>

@@ -18,6 +18,7 @@ import { Component } from '@angular/core';
 
       <main class="relative w-full max-w-sm">
         <div class="mb-8 flex flex-col items-center text-center">
+          <img src="logo.svg" alt="" width="77" height="100" class="mb-3 h-24 w-auto drop-shadow-sm" />
           <span class="text-2xl font-semibold tracking-tight text-stone-900">Dimmelo</span>
           <span class="mt-1 text-sm text-stone-500">Database Palio di Siena</span>
         </div>

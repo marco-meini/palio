@@ -37,11 +37,14 @@ const COLLAPSED_KEY = 'dimmelo.sidebar.collapsed';
       <div class="flex h-14 items-center gap-2 border-b border-stone-200 px-3">
         <a
           routerLink="/"
-          class="min-w-0 px-1 leading-tight"
+          class="flex min-w-0 items-center gap-2 px-1 leading-tight"
           [class]="collapsed() ? 'lg:hidden' : ''"
         >
-          <span class="block text-lg font-semibold text-amber-900">Dimmelo</span>
-          <span class="block truncate text-xs text-stone-500">Database Palio di Siena</span>
+          <img src="logo.svg" alt="" width="28" height="36" class="h-9 w-auto shrink-0" />
+          <span class="min-w-0">
+            <span class="block text-lg font-semibold text-amber-900">Dimmelo</span>
+            <span class="block truncate text-xs text-stone-500">Database Palio di Siena</span>
+          </span>
         </a>
         <button
           type="button"
@@ -126,7 +129,10 @@ const COLLAPSED_KEY = 'dimmelo.sidebar.collapsed';
         >
           <app-icon [paths]="icons.menu" class="size-6" />
         </button>
-        <a routerLink="/" class="text-lg font-semibold text-amber-900">Dimmelo</a>
+        <a routerLink="/" class="flex items-center gap-2 text-lg font-semibold text-amber-900">
+          <img src="logo.svg" alt="" width="22" height="28" class="h-7 w-auto" />
+          Dimmelo
+        </a>
       </header>
       <main class="min-h-0 flex-1 overflow-y-auto">
         <router-outlet />
