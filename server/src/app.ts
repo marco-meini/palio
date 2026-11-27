@@ -2,6 +2,7 @@ import cookieParser from 'cookie-parser';
 import express, { json } from 'express';
 import { AuthController } from './controllers/auth.controller.js';
 import { ChatController } from './controllers/chat.controller.js';
+import { PaliiController } from './controllers/palii.controller.js';
 import { HealthController } from './controllers/health.controller.js';
 import { UsersController } from './controllers/users.controller.js';
 import { Environment } from './environment.js';
@@ -30,6 +31,7 @@ export class App {
     this.express.use('/api/auth', new AuthController(this.env).router);
     this.express.use('/api', new UsersController(this.env).router);
     this.express.use('/api', new ChatController(this.env).router);
+    this.express.use('/api', new PaliiController(this.env).router);
     this.express.use(errorHandler);
   }
 }

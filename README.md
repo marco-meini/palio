@@ -88,6 +88,7 @@ quella di ZITADEL.
 **Permessi = ruoli del progetto Dimmelo su ZITADEL** (stesse chiavi):
 
 - `chat.use` — usare la chat Dimmelo;
+- `palii.view` — consultare l'archivio dei Palii (pagina *Palii*);
 - `users.view` — vedere gli utenti; `users.manage` — gestirli (comprende vedere).
 
 Entra solo chi ha almeno un ruolo: lo controlla Dimmelo (non ZITADEL), così chi entra con un
@@ -132,7 +133,7 @@ cd server && npm run import:dimmelo-users                # lo fa (scrive su ZITA
 
 #### Configurazione su ZITADEL (una volta)
 
-1. **Progetto `Dimmelo`** con i ruoli `chat.use`, `users.view`, `users.manage` e l'opzione
+1. **Progetto `Dimmelo`** con i ruoli `chat.use`, `palii.view`, `users.view`, `users.manage` e l'opzione
    *Return user roles during authentication* (non *Only authorized users can authenticate*: il
    controllo lo fa Dimmelo, per poter proporre un altro account). Il suo id va in
    `ZITADEL_PROJECT_ID`.
@@ -196,6 +197,7 @@ Route di autenticazione e utenti:
 | GET | `/api/users`, `/api/users/:id`, `/api/permissions` | `users.view` | Elenco, scheda, catalogo permessi |
 | POST/PUT/DELETE | `/api/users[/:id[/invite\|disable\|enable]]` | `users.manage` | Gestione utenti |
 | GET/DELETE | `/api/chats[/:id]` | `chat.use` | Chat salvate dell'utente: elenco, conversazione, eliminazione |
+| GET | `/api/palii?annoDa&annoA&vincitrice&tipo&q&pagina`, `/api/palii/filtri`, `/api/palii/:id` | `palii.view` | Archivio dei Palii: elenco filtrato (50 per pagina), valori per i filtri, scheda completa (corsa, estrazione e tratta, dirigenze, prove) |
 | POST | `/api/chat` | `chat.use` | Domanda `{ conversationId?, message }`, risposta in streaming (SSE); senza `conversationId` crea la chat e ne genera il titolo con l'AI (`ANTHROPIC_TITLE_MODEL`, default `ANTHROPIC_MODEL`) |
 
 `GET /api/health` resta pubblico (monitoring).

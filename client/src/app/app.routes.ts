@@ -25,13 +25,14 @@ export const routes: Routes = [
     canActivateChild: [authGuard],
     children: [
       {
-        // home: la chat, o «Utenti» per chi non può usarla (senza sessione: la chat, che porta
+        // home: la chat, o «Palii» / «Utenti» per chi non può usarla (senza sessione: la chat, che porta
         // all'accesso)
         path: '',
         pathMatch: 'full',
         redirectTo: () => {
           const auth = inject(AuthService);
           if (!auth.isAuthenticated() || auth.can('chat.use')) return '/chat';
+          if (auth.can('palii.view')) return '/palii';
           return auth.can('users.view') ? '/utenti' : '/accesso-negato';
         },
       },
@@ -48,6 +49,20 @@ export const routes: Routes = [
             path: ':id',
             loadComponent: () =>
               import('./features/chat/chat.component').then((m) => m.ChatComponent),
+          },
+        ],
+      },
+      {
+        path: 'palii',
+        canActivate: [permissionGuard('palii.view')],
+        children: [
+          {
+            path: '',
+            loadComponent: () => import('./features/palii/palii-list').then((m) => m.PaliiList),
+          },
+          {
+            path: ':id',
+            loadComponent: () => import('./features/palii/palio-detail').then((m) => m.PalioDetail),
           },
         ],
       },

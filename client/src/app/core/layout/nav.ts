@@ -12,5 +12,6 @@ export interface NavItem {
 /** Voci della sidebar, in ordine. Ogni nuova pagina dell'app si aggiunge qui. */
 export const NAV_ITEMS: readonly NavItem[] = [
   { label: 'Chat', path: '/chat', icon: ICONS.chat, permission: 'chat.use' },
+  { label: 'Palii', path: '/palii', icon: ICONS.flag, permission: 'palii.view' },
   { label: 'Utenti', path: '/utenti', icon: ICONS.users, permission: 'users.view' },
 ];

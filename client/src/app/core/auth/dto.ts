@@ -7,7 +7,7 @@
  * Permessi `<sezione>.<azione>`: sono i ruoli del progetto Dimmelo su ZITADEL.
  * Etichette e raggruppamento li espone `GET /api/permissions`.
  */
-export type Permission = 'chat.use' | 'users.view' | 'users.manage';
+export type Permission = 'chat.use' | 'palii.view' | 'users.view' | 'users.manage';
 
 export interface CurrentUserDto {
   /** Id dell'utente su ZITADEL (lo stesso di `UserDto.id`). */

@@ -49,6 +49,7 @@ describe('permessi', () => {
       PERMISSION_CATALOG.map((s) => [s.key, s.permissions.map((p) => p.key)]),
       [
         ['chat', ['chat.use']],
+        ['palii', ['palii.view']],
         ['users', ['users.view', 'users.manage']],
       ],
     );

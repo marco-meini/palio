@@ -4,7 +4,7 @@
  * Sono i ruoli del progetto Dimmelo su ZITADEL (stesse chiavi): un permesso nuovo va creato
  * anche lì. Etichette e raggruppamento li espone l'API (`GET /api/permissions`).
  */
-export type Permission = 'chat.use' | 'users.view' | 'users.manage';
+export type Permission = 'chat.use' | 'palii.view' | 'users.view' | 'users.manage';
 
 export interface PermissionDto {
   key: Permission;
@@ -27,6 +27,7 @@ export interface PermissionSectionDto {
  */
 const SECTIONS: Record<string, string> = {
   chat: 'Chat',
+  palii: 'Palii',
   users: 'Utenti',
 };
 
@@ -34,6 +35,11 @@ const DEFINITIONS: Record<Permission, { label: string; description: string; impl
   'chat.use': {
     label: 'Usare',
     description: 'Fare domande a Dimmelo sul database del Palio',
+    implies: [],
+  },
+  'palii.view': {
+    label: 'Vedere',
+    description: "Consultare l'archivio dei Palii: risultati, estrazioni, tratta, dirigenze e prove",
     implies: [],
   },
   'users.view': {
