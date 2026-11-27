@@ -11,20 +11,23 @@ export class ZitadelError extends Error {
 }
 /**
  * Client delle API di gestione di ZITADEL con il token del service account di palio (mai nel
- * browser): utenti (condivisi con le altre app) e loro accesso al progetto Dimmelo.
+ * browser): utenti dell'organizzazione di Dimmelo e loro accesso al progetto Dimmelo.
  * Il login invece passa da OIDC (`lib/auth/oidc-client.ts`).
  */
 export class ZitadelService {
     config;
-    orgId;
     constructor(config) {
         this.config = config;
     }
-    /** Utente umano con quella email (senza distinzione di maiuscole), se esiste. */
+    /**
+     * Utente umano con quella email (senza distinzione di maiuscole) nell'organizzazione di
+     * Dimmelo, se esiste. Gli account delle altre organizzazioni (altre app) non si vedono.
+     */
     async findUserByEmail(email) {
         const { result } = await this.request('POST', '/v2/users', {
             query: { limit: 2 },
             queries: [
+                { organizationIdQuery: { organizationId: this.config.organizationId } },
                 { emailQuery: { emailAddress: email, method: 'TEXT_QUERY_METHOD_EQUALS_IGNORE_CASE' } },
                 { typeQuery: { type: 'TYPE_HUMAN' } },
             ],
@@ -44,7 +47,7 @@ export class ZitadelService {
      */
     async createUser(input) {
         const { id } = await this.request('POST', '/v2/users/new', {
-            organizationId: await this.organizationId(),
+            organizationId: this.config.organizationId,
             username: input.email,
             human: {
                 profile: { givenName: input.firstName, familyName: input.lastName, displayName: input.displayName },
@@ -63,17 +66,28 @@ export class ZitadelService {
     }
     /**
      * Link monouso per registrare una passkey sulla pagina di login di ZITADEL. ZITADEL restituisce
-     * il codice (non manda email): il link lo condivide chi invita.
+     * il codice (non manda email): il link lo condivide chi invita. Con il Login V2 il link è di
+     * Dimmelo (`/api/auth/invito`): avvia un login e registra la passkey dentro quello, così
+     * l'utente finisce in Dimmelo; la pagina del Login V2 non chiede il nome del dispositivo.
      */
-    async passkeyRegistrationLink(userId) {
+    async passkeyRegistrationLink(userId, appUrl) {
         const { code } = await this.request('POST', `/v2/users/${enc(userId)}/passkeys/registration_link`, { returnCode: {} });
-        const params = new URLSearchParams({
-            userID: userId,
-            orgID: await this.organizationId(),
-            codeID: code.id,
-            code: code.code,
-        });
+        const organization = this.config.organizationId;
+        if (this.config.loginV2) {
+            const params = new URLSearchParams({ userId, organization, codeId: code.id, code: code.code });
+            return `${appUrl}/api/auth/invito?${params.toString()}`;
+        }
+        const params = new URLSearchParams({ userID: userId, orgID: organization, codeID: code.id, code: code.code });
         return `${this.config.url}/ui/login/login/passwordless/init?${params.toString()}`;
+    }
+    /**
+     * L'utente sa già entrare: ha una passkey o un login esterno collegato (es. Google). In quel
+     * caso non va mandato a registrare un'altra passkey: sul dispositivo dove ce l'ha già il
+     * browser rifiuta di crearne una seconda ("The object is in an invalid state").
+     */
+    async hasLoginMethod(userId) {
+        const { authMethodTypes } = await this.request('GET', `/v2/users/${enc(userId)}/authentication_methods`);
+        return (authMethodTypes ?? []).some((t) => t === 'AUTHENTICATION_METHOD_TYPE_PASSKEY' || t === 'AUTHENTICATION_METHOD_TYPE_IDP');
     }
     /** Accessi al progetto Dimmelo (tutti, o di un utente). */
     async listGrants(userId) {
@@ -112,24 +126,12 @@ export class ZitadelService {
     async removeGrant(userId, grantId) {
         await this.request('DELETE', `/management/v1/users/${enc(userId)}/grants/${enc(grantId)}`);
     }
-    /** Organizzazione degli utenti: configurata o quella del service account (in cache). */
-    organizationId() {
-        if (this.config.organizationId)
-            return Promise.resolve(this.config.organizationId);
-        this.orgId ??= this.request('GET', '/auth/v1/users/me')
-            .then((me) => me.user.details.resourceOwner)
-            .catch((error) => {
-            this.orgId = undefined;
-            throw error;
-        });
-        return this.orgId;
-    }
     async request(method, path, body) {
         if (!this.config.token) {
             throw badGateway('Gestione utenti non configurata (manca ZITADEL_TOKEN)');
         }
         // le API v1 di gestione lavorano nel contesto di un'organizzazione
-        const orgHeader = path.startsWith('/management/') ? { 'x-zitadel-orgid': await this.organizationId() } : {};
+        const orgHeader = path.startsWith('/management/') ? { 'x-zitadel-orgid': this.config.organizationId } : {};
         let response;
         try {
             response = await fetch(`${this.config.url}${path}`, {

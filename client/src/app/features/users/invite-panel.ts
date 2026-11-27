@@ -1,28 +1,45 @@
 import { Component, computed, input, output, signal } from '@angular/core';
 import type { InviteDto } from '../../core/auth/dto';
 
-/** Link per creare la passkey, da copiare o condividere con l'utente. */
+/** Invito: esito dell'email (se configurata) e link da copiare o condividere con l'utente. */
 @Component({
   selector: 'app-invite-panel',
   template: `
     <div class="rounded-xl border border-amber-200 bg-amber-50 p-5">
       <div class="flex items-start justify-between gap-4">
         <div>
-          <h2 class="font-semibold text-amber-900">Link d'invito per {{ name() }}</h2>
-          @if (invite().kind === 'login') {
-            <p class="mt-1 text-sm text-amber-800">
-              {{ name() }} ha già un account con cui entrare (passkey o Google): non serve
-              registrare niente. Mandagli questo link ed entra con il suo solito metodo.
-            </p>
+          @if (invite().mail; as mail) {
+            @if (mail.sent) {
+              <h2 class="font-semibold text-amber-900">Invito mandato a {{ name() }}</h2>
+              <p class="mt-1 text-sm text-amber-800">
+                Gli abbiamo scritto a <strong>{{ mail.to }}</strong> con il link per entrare. Se non
+                la trova (controlli lo spam), puoi mandargli il link qui sotto.
+              </p>
+            } @else {
+              <h2 class="font-semibold text-amber-900">Link d'invito per {{ name() }}</h2>
+              <p class="mt-1 text-sm font-medium text-red-700">
+                Non siamo riusciti a mandare l'email a {{ mail.to }}: copia il link e mandalo tu.
+              </p>
+            }
           } @else {
-            <p class="mt-1 text-sm text-amber-800">
-              Mandalo a {{ name() }}: aprendolo registra la sua passkey (Face ID, Touch ID o
-              chiavetta) e poi entra in Dimmelo. Vale una sola volta e scade presto: se non lo usa
-              subito, generane uno nuovo.
-            </p>
-            <p class="mt-1 text-sm text-amber-800">
-              Se usa Google con questa stessa email, può anche entrare direttamente con Google.
-            </p>
+            <h2 class="font-semibold text-amber-900">Link d'invito per {{ name() }}</h2>
+          }
+          @if (!invite().mail?.sent) {
+            @if (invite().kind === 'login') {
+              <p class="mt-1 text-sm text-amber-800">
+                {{ name() }} ha già un account con cui entrare (passkey o Google): non serve
+                registrare niente. Mandagli questo link ed entra con il suo solito metodo.
+              </p>
+            } @else {
+              <p class="mt-1 text-sm text-amber-800">
+                Mandalo a {{ name() }}: aprendolo registra la sua passkey (Face ID, Touch ID o
+                chiavetta) e poi entra in Dimmelo. Vale una sola volta e scade presto: se non lo usa
+                subito, generane uno nuovo.
+              </p>
+              <p class="mt-1 text-sm text-amber-800">
+                Se usa Google con questa stessa email, può anche entrare direttamente con Google.
+              </p>
+            }
           }
         </div>
         <button

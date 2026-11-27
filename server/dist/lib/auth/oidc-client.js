@@ -39,6 +39,9 @@ export class OidcClient {
                 'offline_access',
                 `urn:zitadel:iam:org:project:id:${this.config.zitadel.projectId}:aud`,
                 'urn:zitadel:iam:org:projects:roles',
+                // login solo nell'organizzazione di Dimmelo: un account con la stessa email in
+                // un'altra organizzazione (altra app) non entra
+                `urn:zitadel:iam:org:id:${this.config.zitadel.organizationId}`,
             ].join(' '),
             code_challenge: await oidc.calculatePKCECodeChallenge(params.codeVerifier),
             code_challenge_method: 'S256',
@@ -50,6 +53,35 @@ export class OidcClient {
             ...(params.selectAccount ? { prompt: 'select_account' } : {}),
         })
             .toString();
+    }
+    /**
+     * Pagina del Login V2 che registra la passkey dell'invito *dentro* un login OIDC: dopo la
+     * passkey l'utente entra con quella e ZITADEL torna al callback di Dimmelo. Senza un login in
+     * corso il Login V2 si fermerebbe su "Sei connesso". La richiesta di login la crea il server:
+     * ZITADEL risponde con un redirect che ne contiene l'id (`…/login?authRequest=V2_…`), che il
+     * Login V2 chiama `oidc_<id>`. Non serve il browser: il Login V2 la lega alla sessione che
+     * crea quando l'utente entra con la passkey.
+     */
+    async invitePasskeyUrl(authorizationUrl, invite) {
+        let location;
+        try {
+            const response = await fetch(authorizationUrl, {
+                redirect: 'manual',
+                signal: AbortSignal.timeout(10_000),
+            });
+            location = response.headers.get('location');
+        }
+        catch (error) {
+            throw this.wrap(error, "richiesta di login per l'invito");
+        }
+        const authRequest = location
+            ? new URL(location, this.config.zitadel.url).searchParams.get('authRequest')
+            : null;
+        if (!authRequest) {
+            throw this.wrap(new Error(`redirect inatteso: ${location ?? 'nessuno'}`), "richiesta di login per l'invito");
+        }
+        const params = new URLSearchParams({ ...invite, requestId: `oidc_${authRequest}` });
+        return `${this.config.zitadel.url}/ui/v2/login/passkey/set?${params.toString()}`;
     }
     /** Scambia il codice del callback (query string ricevuta) con i token e li verifica. */
     async exchange(query, expected) {

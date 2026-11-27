@@ -39,16 +39,31 @@ export function loadAuthConfig() {
             url: zitadelUrl,
             projectId: required('ZITADEL_PROJECT_ID'),
             token: process.env['ZITADEL_TOKEN'] || undefined,
-            organizationId: process.env['ZITADEL_ORG_ID'] || undefined,
+            organizationId: required('ZITADEL_ORG_ID'),
+            loginV2: process.env['ZITADEL_LOGIN_V2'] === 'true',
         },
         oidc: {
             clientId: required('OIDC_CLIENT_ID'),
             clientSecret: required('OIDC_CLIENT_SECRET'),
         },
+        mail: loadMailConfig(),
         session: {
             ttlDays: int('SESSION_TTL_DAYS', 30),
             idleDays: int('SESSION_IDLE_DAYS', 7),
         },
+    };
+}
+function loadMailConfig() {
+    const host = process.env['SMTP_HOST'];
+    if (!host)
+        return undefined;
+    return {
+        host,
+        port: int('SMTP_PORT', 587),
+        secure: process.env['SMTP_SECURE'] === 'true',
+        user: required('SMTP_USER'),
+        password: required('SMTP_PASSWORD'),
+        from: required('MAIL_FROM'),
     };
 }
 //# sourceMappingURL=auth-config.js.map

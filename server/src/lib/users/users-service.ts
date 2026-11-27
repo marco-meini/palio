@@ -3,6 +3,8 @@ import type { AuthUser } from '../auth/auth-types.js';
 import type { CreateUserResponseDto, InviteDto, UserDto, UserInputDto } from '../auth/dto.js';
 import { effectivePermissions } from '../auth/permissions.js';
 import { conflict, forbidden, notFound } from '../http-error.js';
+import { inviteMail } from '../mail/invite-mail.js';
+import type { Mailer } from '../mail/mailer.js';
 import { toHttpError, type ZitadelGrant, type ZitadelService } from '../zitadel.js';
 import { toUserDto } from './users-mapper.js';
 import { fullName } from './users-validation.js';
@@ -22,6 +24,8 @@ export class UsersService {
     private readonly zitadel: ZitadelService,
     private readonly repository: ModelUsers,
     private readonly appUrl: string,
+    /** Invio delle email d'invito; senza, l'invito è solo il link da copiare. */
+    private readonly mailer?: Mailer,
   ) {}
 
   async list(): Promise<UserDto[]> {
@@ -44,7 +48,7 @@ export class UsersService {
   /**
    * Dà accesso a Dimmelo: collega l'account ZITADEL con quella email (es. già usato in
    * un'altra app) o lo crea, assegna i ruoli e prepara l'invito (passkey o, se sa già entrare,
-   * il link di Dimmelo).
+   * il link di Dimmelo), mandato anche per email se l'invio è configurato.
    */
   async create(input: UserInputDto, actor: AuthUser): Promise<CreateUserResponseDto> {
     this.checkAssignment(actor, input.permissions);
@@ -62,7 +66,7 @@ export class UsersService {
       await this.zitadel.addGrant(userId, input.permissions);
       console.info(`[users] Accesso a Dimmelo per ${userId} (${existing ? 'account esistente' : 'nuovo account'})`);
       const user = await this.find(userId);
-      return { user: await this.dto(user), invite: await this.inviteFor(userId) };
+      return { user: await this.dto(user), invite: await this.inviteFor(user, actor) };
     });
   }
 
@@ -103,12 +107,12 @@ export class UsersService {
     });
   }
 
-  /** Nuovo invito (es. il link precedente è scaduto). */
+  /** Nuovo invito (es. il link precedente è scaduto), mandato anche per email se configurata. */
   async invite(id: string, actor: AuthUser): Promise<InviteDto> {
     const grant = await this.find(id);
     this.checkCanManage(actor, grant);
     if (!grant.active) throw conflict("L'accesso dell'utente è disattivato");
-    return this.call(() => this.inviteFor(id));
+    return this.call(() => this.inviteFor(grant, actor));
   }
 
   /** Sospende l'accesso a Dimmelo (i ruoli restano) e chiude le sessioni aperte. */
@@ -180,9 +184,33 @@ export class UsersService {
     return toUserDto(grant, logins.get(grant.userId));
   }
 
-  private async inviteFor(userId: string): Promise<InviteDto> {
-    if (await this.zitadel.hasLoginMethod(userId)) return { kind: 'login', url: this.appUrl };
-    return { kind: 'passkey', url: await this.zitadel.passkeyRegistrationLink(userId, this.appUrl) };
+  private async inviteFor(grant: ZitadelGrant, actor: AuthUser): Promise<InviteDto> {
+    const { userId } = grant;
+    const invite: InviteDto = (await this.zitadel.hasLoginMethod(userId))
+      ? { kind: 'login', url: this.appUrl }
+      : { kind: 'passkey', url: await this.zitadel.passkeyRegistrationLink(userId, this.appUrl) };
+    if (!this.mailer || !grant.email) return invite;
+    return { ...invite, mail: { to: grant.email, sent: await this.sendInvite(invite, grant, actor) } };
+  }
+
+  /** Un invio non riuscito non blocca l'invito: resta il link da copiare. */
+  private async sendInvite(invite: InviteDto, grant: ZitadelGrant, actor: AuthUser): Promise<boolean> {
+    try {
+      await this.mailer!.send(
+        inviteMail({
+          invite,
+          name: grant.firstName || grant.displayName,
+          email: grant.email,
+          inviter: actor.display_name,
+          appUrl: this.appUrl,
+        }),
+      );
+      console.info(`[users] Email d'invito (${invite.kind}) inviata a ${grant.userId}`);
+      return true;
+    } catch (error) {
+      console.error(`[users] Email d'invito a ${grant.userId} non inviata:`, error instanceof Error ? error.message : error);
+      return false;
+    }
   }
 
   private async call<T>(fn: () => Promise<T>): Promise<T> {

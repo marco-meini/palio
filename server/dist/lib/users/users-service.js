@@ -1,12 +1,14 @@
 import { effectivePermissions } from '../auth/permissions.js';
 import { conflict, forbidden, notFound } from '../http-error.js';
+import { inviteMail } from '../mail/invite-mail.js';
 import { toHttpError } from '../zitadel.js';
 import { toUserDto } from './users-mapper.js';
 import { fullName } from './users-validation.js';
 /**
  * Utenti di Dimmelo: chi ha accesso al progetto Dimmelo su ZITADEL (user grant) e con quali
- * ruoli. ZITADEL è la fonte di verità; palio aggiunge solo l'ultimo accesso. Le identità sono
- * condivise con le altre app: togliere l'accesso a Dimmelo non tocca l'account.
+ * ruoli. ZITADEL è la fonte di verità; palio aggiunge solo l'ultimo accesso. Gli utenti stanno
+ * nell'organizzazione di Dimmelo su ZITADEL (ogni app ha la sua): togliere l'accesso a Dimmelo
+ * non cancella l'account.
  *
  * Regole: si gestiscono solo utenti con permessi che si hanno anche (cambiandogli l'email e
  * mandando un invito se ne prenderebbe il posto), si assegnano solo permessi propri, nessuno
@@ -15,9 +17,15 @@ import { fullName } from './users-validation.js';
 export class UsersService {
     zitadel;
     repository;
-    constructor(zitadel, repository) {
+    appUrl;
+    mailer;
+    constructor(zitadel, repository, appUrl, 
+    /** Invio delle email d'invito; senza, l'invito è solo il link da copiare. */
+    mailer) {
         this.zitadel = zitadel;
         this.repository = repository;
+        this.appUrl = appUrl;
+        this.mailer = mailer;
     }
     async list() {
         const grants = await this.call(() => this.zitadel.listGrants());
@@ -33,7 +41,8 @@ export class UsersService {
     }
     /**
      * Dà accesso a Dimmelo: collega l'account ZITADEL con quella email (es. già usato in
-     * un'altra app) o lo crea, assegna i ruoli e prepara il link per la passkey.
+     * un'altra app) o lo crea, assegna i ruoli e prepara l'invito (passkey o, se sa già entrare,
+     * il link di Dimmelo), mandato anche per email se l'invio è configurato.
      */
     async create(input, actor) {
         this.checkAssignment(actor, input.permissions);
@@ -50,7 +59,7 @@ export class UsersService {
             await this.zitadel.addGrant(userId, input.permissions);
             console.info(`[users] Accesso a Dimmelo per ${userId} (${existing ? 'account esistente' : 'nuovo account'})`);
             const user = await this.find(userId);
-            return { user: await this.dto(user), invite: await this.inviteFor(userId) };
+            return { user: await this.dto(user), invite: await this.inviteFor(user, actor) };
         });
     }
     async update(id, input, actor) {
@@ -79,7 +88,6 @@ export class UsersService {
             if (input.firstName !== grant.firstName ||
                 input.lastName !== grant.lastName ||
                 input.email !== grant.email.toLowerCase()) {
-                // l'identità è condivisa con le altre app: il nome cambia anche lì
                 await this.zitadel.updateUser(id, { ...input, displayName });
             }
             if (!sameSet(input.permissions, grant.roleKeys)) {
@@ -89,13 +97,13 @@ export class UsersService {
             return this.dto(await this.find(id));
         });
     }
-    /** Nuovo link per registrare una passkey (es. il precedente è scaduto o l'ha persa). */
+    /** Nuovo invito (es. il link precedente è scaduto), mandato anche per email se configurata. */
     async invite(id, actor) {
         const grant = await this.find(id);
         this.checkCanManage(actor, grant);
         if (!grant.active)
             throw conflict("L'accesso dell'utente è disattivato");
-        return this.call(() => this.inviteFor(id));
+        return this.call(() => this.inviteFor(grant, actor));
     }
     /** Sospende l'accesso a Dimmelo (i ruoli restano) e chiude le sessioni aperte. */
     async disable(id, actor) {
@@ -118,7 +126,7 @@ export class UsersService {
         await this.call(() => this.zitadel.reactivateGrant(id, grant.grantId));
         return this.dto({ ...grant, active: true });
     }
-    /** Toglie l'accesso a Dimmelo. L'account su ZITADEL e le passkey restano (altre app). */
+    /** Toglie l'accesso a Dimmelo. L'account su ZITADEL e le passkey restano. */
     async remove(id, actor) {
         if (id === actor.idp_user_id)
             throw conflict('Non puoi eliminare te stesso');
@@ -163,8 +171,32 @@ export class UsersService {
         const logins = await this.repository.lastLogins([grant.userId]);
         return toUserDto(grant, logins.get(grant.userId));
     }
-    async inviteFor(userId) {
-        return { url: await this.zitadel.passkeyRegistrationLink(userId) };
+    async inviteFor(grant, actor) {
+        const { userId } = grant;
+        const invite = (await this.zitadel.hasLoginMethod(userId))
+            ? { kind: 'login', url: this.appUrl }
+            : { kind: 'passkey', url: await this.zitadel.passkeyRegistrationLink(userId, this.appUrl) };
+        if (!this.mailer || !grant.email)
+            return invite;
+        return { ...invite, mail: { to: grant.email, sent: await this.sendInvite(invite, grant, actor) } };
+    }
+    /** Un invio non riuscito non blocca l'invito: resta il link da copiare. */
+    async sendInvite(invite, grant, actor) {
+        try {
+            await this.mailer.send(inviteMail({
+                invite,
+                name: grant.firstName || grant.displayName,
+                email: grant.email,
+                inviter: actor.display_name,
+                appUrl: this.appUrl,
+            }));
+            console.info(`[users] Email d'invito (${invite.kind}) inviata a ${grant.userId}`);
+            return true;
+        }
+        catch (error) {
+            console.error(`[users] Email d'invito a ${grant.userId} non inviata:`, error instanceof Error ? error.message : error);
+            return false;
+        }
     }
     async call(fn) {
         try {

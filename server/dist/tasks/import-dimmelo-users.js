@@ -7,7 +7,7 @@
  * genera nella pagina Utenti.
  *
  * Usage: npm run import:dimmelo-users -- [--dry-run]
- * Serve: DATABASE_URL, ZITADEL_URL, ZITADEL_PROJECT_ID, ZITADEL_TOKEN (ZITADEL_ORG_ID facoltativo).
+ * Serve: DATABASE_URL, ZITADEL_URL, ZITADEL_PROJECT_ID, ZITADEL_TOKEN, ZITADEL_ORG_ID.
  */
 import pg from 'pg';
 import { loadEnvFiles } from '../load-env.js';
@@ -31,7 +31,8 @@ async function main() {
         url: env('ZITADEL_URL').replace(/\/+$/, ''),
         projectId: env('ZITADEL_PROJECT_ID'),
         token: env('ZITADEL_TOKEN'),
-        organizationId: process.env['ZITADEL_ORG_ID'] || undefined,
+        organizationId: env('ZITADEL_ORG_ID'),
+        loginV2: process.env['ZITADEL_LOGIN_V2'] === 'true',
     });
     const pool = new pg.Pool(loadPgConfig());
     try {

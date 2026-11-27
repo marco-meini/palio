@@ -20,14 +20,17 @@ export class AuthService {
      * `selectAccount` si sceglie l'account (es. quello usato non ha accesso a Dimmelo).
      */
     async startLogin(returnTo, selectAccount = false, now = Date.now()) {
-        const state = {
-            state: oidc.randomState(),
-            nonce: oidc.randomNonce(),
-            codeVerifier: oidc.randomPKCECodeVerifier(),
-            returnTo: safeReturnTo(returnTo),
-            expiresAt: now + LOGIN_STATE_TTL_MS,
-        };
+        const state = newLoginState(returnTo, now);
         return { url: await this.oidc.authorizationUrl({ ...state, selectAccount }), state };
+    }
+    /**
+     * Link d'invito (Login V2): login che parte dalla registrazione della passkey e finisce
+     * dentro Dimmelo, come un login normale (stesso cookie di stato, stesso callback).
+     */
+    async startInvite(invite, now = Date.now()) {
+        const state = newLoginState('/', now);
+        const authorizationUrl = await this.oidc.authorizationUrl(state);
+        return { url: await this.oidc.invitePasskeyUrl(authorizationUrl, invite), state };
     }
     /**
      * Ritorno da ZITADEL: verifica i token, aggiorna il profilo e apre la sessione. Chi non ha
@@ -54,5 +57,14 @@ export class AuthService {
         const idToken = sessionToken ? await this.sessions.destroy(sessionToken) : null;
         return this.oidc.endSessionUrl(idToken);
     }
+}
+function newLoginState(returnTo, now) {
+    return {
+        state: oidc.randomState(),
+        nonce: oidc.randomNonce(),
+        codeVerifier: oidc.randomPKCECodeVerifier(),
+        returnTo: safeReturnTo(returnTo),
+        expiresAt: now + LOGIN_STATE_TTL_MS,
+    };
 }
 //# sourceMappingURL=auth-service.js.map

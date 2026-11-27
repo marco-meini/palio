@@ -109,6 +109,10 @@ il service account di palio.
   pagina di ZITADEL, da mandare all'utente (monouso, scade presto: se serve se ne genera un altro
   con *Invito*). Se l'utente usa Google con la stessa email può entrare direttamente con Google
   (collegamento automatico per email).
+- **Email d'invito.** Con l'SMTP configurato (`SMTP_*`, `MAIL_FROM`; in produzione Brevo) il
+  link parte anche per email, con il template di `server/src/lib/mail/invite-mail.ts`, sia per un
+  nuovo utente sia con *Invito*. Se l'invio non riesce l'invito resta valido e la pagina lo dice:
+  il link si copia e si manda a mano.
 - **Modifica.** Nome ed email cambiano sull'account ZITADEL; i
   permessi sul ruolo del progetto.
 - **Disattivazione.** Sospende l'accesso a Dimmelo (i ruoli restano) e chiude le sessioni.

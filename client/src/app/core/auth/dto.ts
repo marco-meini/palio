@@ -79,6 +79,8 @@ export type UpdateUserDto = UserInputDto;
 export interface InviteDto {
   kind: 'passkey' | 'login';
   url: string;
+  /** Email d'invito (assente se l'invio email non è configurato): destinatario ed esito. */
+  mail?: { to: string; sent: boolean };
 }
 
 export interface CreateUserResponseDto {

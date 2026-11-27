@@ -15,6 +15,7 @@ export class AuthController extends Abstract_Controller {
         const { guard } = env.auth;
         this.router.get('/login', guard.public(), this.login.bind(this));
         this.router.get('/callback', guard.public(), this.callback.bind(this));
+        this.router.get('/invito', guard.public(), this.invite.bind(this));
         this.router.post('/logout', guard.public(), this.logout.bind(this));
         this.router.get('/me', guard.anyUser(), this.me.bind(this));
     }
@@ -23,7 +24,7 @@ export class AuthController extends Abstract_Controller {
      * tentativo resta in un cookie firmato.
      */
     async login(req, res) {
-        const { auth, config } = this.env.auth;
+        const { auth } = this.env.auth;
         let target;
         try {
             target = await auth.startLogin(req.query['returnTo'], req.query['account'] === 'altro');
@@ -31,6 +32,28 @@ export class AuthController extends Abstract_Controller {
         catch {
             return this.loginError(res, 'servizio');
         }
+        this.redirectToZitadel(res, target);
+    }
+    /**
+     * Link d'invito (Login V2): registra la passkey su ZITADEL e torna al callback già dentro
+     * Dimmelo. Il codice lo verifica ZITADEL (monouso, scade): qui si controlla solo la forma.
+     */
+    async invite(req, res) {
+        const invite = parseInvite(req.query);
+        if (!invite)
+            return this.loginError(res, 'invito');
+        let target;
+        try {
+            target = await this.env.auth.auth.startInvite(invite);
+        }
+        catch {
+            return this.loginError(res, 'servizio');
+        }
+        this.redirectToZitadel(res, target);
+    }
+    /** Stato del tentativo nel cookie firmato, poi via verso ZITADEL. */
+    redirectToZitadel(res, target) {
+        const { config } = this.env.auth;
         res.cookie(LOGIN_COOKIE, encodeLoginState(target.state, config.cookieSecret), {
             httpOnly: true,
             secure: config.secureCookies,
@@ -78,5 +101,13 @@ export class AuthController extends Abstract_Controller {
     loginError(res, code) {
         res.redirect(`/accesso?errore=${code}`);
     }
+}
+/** Parametri del link d'invito (`/api/auth/invito?userId&organization&codeId&code`). */
+export function parseInvite(query) {
+    const values = ['userId', 'organization', 'codeId', 'code'].map((key) => query[key]);
+    if (!values.every((v) => typeof v === 'string' && /^[\w-]{1,200}$/.test(v)))
+        return null;
+    const [userId, organization, codeId, code] = values;
+    return { userId, organization, codeId, code };
 }
 //# sourceMappingURL=auth.controller.js.map

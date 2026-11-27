@@ -2,6 +2,7 @@ import type { AuthConfig } from '../../auth-config.js';
 import { ModelAuth } from '../../model/auth.model.js';
 import { ModelUsers } from '../../model/users.model.js';
 import { createDb } from '../db.js';
+import { SmtpMailer } from '../mail/mailer.js';
 import type { PgClientManager } from '../pg-client-manager.js';
 import { UsersService } from '../users/users-service.js';
 import { ZitadelService } from '../zitadel.js';
@@ -30,6 +31,11 @@ export function createAuthServices(pg: PgClientManager, config: AuthConfig): Aut
     guard: createAuthGuard(sessions, config.appUrl),
     sessions,
     auth: new AuthService(oidc, sessions, authModel),
-    users: new UsersService(new ZitadelService(config.zitadel), new ModelUsers(db), config.appUrl),
+    users: new UsersService(
+      new ZitadelService(config.zitadel),
+      new ModelUsers(db),
+      config.appUrl,
+      config.mail && new SmtpMailer(config.mail),
+    ),
   };
 }

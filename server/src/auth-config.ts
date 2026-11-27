@@ -53,6 +53,18 @@ export interface OidcClientConfig {
   clientSecret: string;
 }
 
+/** SMTP per le email d'invito (es. Brevo). Senza `SMTP_HOST` gli inviti restano solo link da copiare. */
+export interface MailConfig {
+  host: string;
+  port: number;
+  /** `true` con TLS diretto (porta 465); `false` con STARTTLS (porta 587). */
+  secure: boolean;
+  user: string;
+  password: string;
+  /** Mittente, es. `Dimmelo <noreply@example.com>`. */
+  from: string;
+}
+
 export interface AuthConfig {
   /** URL pubblico dell'app (origin del frontend), senza slash finale. */
   appUrl: string;
@@ -62,6 +74,7 @@ export interface AuthConfig {
   cookieSecret: string;
   zitadel: ZitadelConfig;
   oidc: OidcClientConfig;
+  mail: MailConfig | undefined;
   session: {
     /** Durata massima della sessione, in giorni. */
     ttlDays: number;
@@ -96,9 +109,23 @@ export function loadAuthConfig(): AuthConfig {
       clientId: required('OIDC_CLIENT_ID'),
       clientSecret: required('OIDC_CLIENT_SECRET'),
     },
+    mail: loadMailConfig(),
     session: {
       ttlDays: int('SESSION_TTL_DAYS', 30),
       idleDays: int('SESSION_IDLE_DAYS', 7),
     },
+  };
+}
+
+function loadMailConfig(): MailConfig | undefined {
+  const host = process.env['SMTP_HOST'];
+  if (!host) return undefined;
+  return {
+    host,
+    port: int('SMTP_PORT', 587),
+    secure: process.env['SMTP_SECURE'] === 'true',
+    user: required('SMTP_USER'),
+    password: required('SMTP_PASSWORD'),
+    from: required('MAIL_FROM'),
   };
 }
